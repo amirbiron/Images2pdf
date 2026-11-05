@@ -1,0 +1,20 @@
+flask==3.1.3
+gunicorn==26.2.0
+google-api-python-client==2.201.0
+google-auth==2.62.1
+google-auth-httplib2==0.4.4
+requests==2.34.2
+cryptography==50.0.2
+
+# תלויות עקיפות: רצפה מפורשת לגרסה שאינה פגיעה. השרשראות שמביאות אותן מתירות
+# היום גם גרסאות ישנות (requests: certifi>=2023.5.7; google-api-python-client
+# מתיר google-api-core ישן, שמתיר protobuf ישן), כך שבלי הרצפה ההגנה תלויה
+# בכך שה-resolver יבחר דווקא את האחרונה.
+# certifi — GHSA-6q48-6c7w-9gw2 (קריטית: שורשי emSign עם מפתחות ביניים שנחשפו),
+# תוקן ב-2026.10.18, שהסירה את כל שורשי emSign; 2026.10.19 החזירה שלושה מהם
+# ומשאירה בחוץ רק את emSign ECC Root CA - G3 (נבדק בהשוואת cacert.pem של שתי הגרסאות).
+# httplib2 (כל הקריאות לדרייב) ו-requests שניהם סומכים על ה-CA של certifi.
+certifi>=2026.10.19
+# protobuf — GHSA-7gcm-g887-7qv7 / CVE-2026-0994, תוקן ב-6.33.5. תואם ל-google-api-core 2.43.2,
+# שדורש protobuf>=6.33.5,<8.
+protobuf>=6.33.5

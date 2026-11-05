@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card narrow">
+  <h1>{{ title }}</h1>
+  {% if message %}<p>{{ message }}</p>{% endif %}
+  {% if items %}<ul class="list">{% for item in items %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
+  {% if hint %}<p class="muted ltr-safe">{{ hint }}</p>{% endif %}
+  {% if show_nav is not defined or show_nav %}<p><a class="button button-secondary" href="/">לדף הבית</a></p>{% endif %}
+</section>
+{% endblock %}
