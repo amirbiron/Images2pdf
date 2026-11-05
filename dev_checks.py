@@ -556,7 +556,8 @@ def page():
         default_folder_id=(last or {}).get("folder_id") or services.settings.dev_sample_folder_id or "",
         disk_problem=disk_problem,
         google_problems=services.settings.google_problems,
-        connected=services.token_store is not None and services.token_store.version() is not None,
+        # כשהדיסק לא תקין לא נוגעים בקובץ ההרשאה (stat עלול לזרוק), כדי שהדף יציג את הבעיה.
+        connected=disk_problem is None and services.token_store is not None and services.token_store.version() is not None,
     )
 
 

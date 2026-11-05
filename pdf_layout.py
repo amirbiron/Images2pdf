@@ -64,6 +64,7 @@ class DocumentLayout:
 
 
 def _validate(aspects: Sequence[float]) -> None:
+    """כל יחס הוא מספר סופי וחיובי. bool נדחה במפורש: ב-Python הוא גם int."""
     if not aspects:
         raise ValueError("at least one image is required")
     for a in aspects:
@@ -118,6 +119,7 @@ def layout_page(
 
 
 def _layout_in(aspects: Sequence[float], orientation: str, *, header: bool) -> DocumentLayout:
+    """פריסת כל העמודים בכיוון אחד, ארבע תמונות לעמוד לפי הסדר, וסכום שטח התמונות."""
     if orientation == PORTRAIT:
         width, height = A4_SHORT_MM, A4_LONG_MM
     else:

@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -50,7 +51,6 @@ UNDERLINE_COLOR = (0.62, 0.62, 0.62)
 CREATOR = "כלי PDF ללוקיישנים"
 
 _ISRAEL = ZoneInfo("Asia/Jerusalem")
-_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 # תווים שאסורים בשם קובץ ב-Windows/macOS/Linux, ותווי כיווניות שמאפשרים להסוות סיומת.
 _FILENAME_FORBIDDEN = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f\u200e\u200f\u202a-\u202e\u2066-\u2069]')
 
@@ -80,24 +80,41 @@ def _ensure_font() -> frozenset[int]:
 
 
 def folder_url(folder_id: str) -> str:
+    """הקישור בכותרת: התיקייה שנבחרה בדרייב (ROADMAP, "כותרת וקישור"). המזהה נבדק קודם."""
     if not is_valid_drive_id(folder_id):
         raise ValueError("invalid folder id")
     return f"https://drive.google.com/drive/folders/{folder_id}"
 
 
 def clean_title(title: object) -> str:
-    """כותרת תקינה: מחרוזת, בלי תווי בקרה, לא ריקה, עד TITLE_MAX_CHARS תווים.
+    """כותרת תקינה: מחרוזת, בלי תווי בקרה ועיצוב, לא ריקה, עד TITLE_MAX_CHARS תווים.
 
+    תווי בקרה (Cc, למשל טאב ושורה חדשה) הופכים לרווח. תווי עיצוב בלתי נראים (Cf: סימני
+    כיווניות כמו U+200F ו-U+202E, רווח באורך אפס) נמחקים: הם נכנסים בהעתקה מדפדפן,
+    ו-U+202E היה הופך את סדר האותיות בכותרת שבקובץ ובמטא-דאטה שלו. את הכיווניות
+    קובע האלגוריתם הדו-כיווני בזמן הציור, ולא תווים שבתוך השם.
     כותרת ארוכה מדי נדחית ולא נחתכת: כותרת חתוכה היא שם לוקיישן אחר.
     """
     if not isinstance(title, str):
         raise ValueError("title must be a string")
-    cleaned = " ".join(_CONTROL_CHARS.sub(" ", title).split())
+    kept = []
+    for ch in title:
+        category = unicodedata.category(ch)
+        if category == "Cf":
+            continue
+        kept.append(" " if category == "Cc" else ch)
+    cleaned = " ".join("".join(kept).split())
     if not cleaned:
         raise ValueError("title is empty")
     if len(cleaned) > TITLE_MAX_CHARS:
         raise ValueError("title is too long")
     return cleaned
+
+
+def drawable_title(title: str) -> str:
+    """הכותרת בלי תווים שאין להם צורה בפונט (למשל אמוג'י). יכולה לצאת ריקה."""
+    glyphs = _ensure_font()
+    return " ".join("".join(ch for ch in title if ch.isspace() or ord(ch) in glyphs).split())
 
 
 def pdf_filename(title: str, day: date | None = None) -> str:
@@ -121,7 +138,10 @@ def build_pdf(
         raise ValueError("layout and images do not match")
     glyphs = _ensure_font()
     removed = "".join(sorted({ch for ch in title if not ch.isspace() and ord(ch) not in glyphs}))
-    drawable_title = " ".join("".join(ch for ch in title if ch.isspace() or ord(ch) in glyphs).split())
+    drawable = drawable_title(title)
+    if not drawable:
+        # בלי טקסט אין על מה לשים את הקישור לתיקייה, והקובץ היה יוצא בלי שם לוקיישן.
+        raise ValueError("title has no characters the font can draw")
 
     page_w = layout.page_width * mm
     page_h = layout.page_height * mm
@@ -131,7 +151,7 @@ def build_pdf(
     title_size = 0.0
     for page in layout.pages:
         if page.has_header:
-            title_size = _draw_header(c, page, page_h, drawable_title, link_url)
+            title_size = _draw_header(c, page, page_h, drawable, link_url)
         for p in page.placements:
             c.drawImage(
                 str(images[p.index].path),
@@ -148,6 +168,7 @@ def build_pdf(
 
 
 def _draw_header(c: canvas.Canvas, page: Page, page_h: float, title: str, link_url: str | None) -> float:
+    """לוגו משמאל, כותרת מימין עם קו תחתון וקישור. מחזיר את גודל הגופן שנבחר."""
     block_left = page.block_x * mm
     block_right = (page.block_x + page.block_width) * mm
     band_top = page_h - MARGIN_MM * mm
@@ -165,8 +186,6 @@ def _draw_header(c: canvas.Canvas, page: Page, page_h: float, title: str, link_u
     else:
         logger.warning("Logo file is missing; the header is drawn without it")
 
-    if not title:
-        return 0.0
     visual = get_display(title, base_dir="R")
     width_at_1pt = pdfmetrics.stringWidth(visual, FONT_NAME, 1)
     available = block_right - block_left - logo_w - (TITLE_LOGO_GAP_MM * mm if logo_w else 0)

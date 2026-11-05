@@ -17,7 +17,7 @@
       <label for="title">כותרת (לא חובה)</label>
       <input type="text" id="title" name="title" maxlength="{{ title_max }}" placeholder="ברירת המחדל: שם התיקייה" autocomplete="off">
       <button type="submit" class="button" id="sample-button">יצירת PDF</button>
-      <p class="muted" id="sample-wait" hidden>מכין את הקובץ, זה יכול לקחת עד דקה.</p>
+      <p class="muted" id="sample-wait" role="status" data-wait="מכין את הקובץ, זה יכול לקחת עד דקה."></p>
     </form>
   {% endif %}
 </section>
@@ -62,5 +62,5 @@
 {% endif %}
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='sample_pdf.js') }}"></script>
+<script src="{{ url_for('static', filename='form_wait.js') }}"></script>
 {% endblock %}

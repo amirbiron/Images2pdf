@@ -76,7 +76,31 @@ def test_characters_without_glyphs_are_removed_and_reported(tmp_path):
     assert "🌊" not in PdfReader(out).pages[0].extract_text()
 
 
-@pytest.mark.parametrize("bad", ["", "   ", None, 5, "א" * 121])
+def test_title_without_drawable_characters_is_refused(tmp_path):
+    """כותרת של אמוג'י בלבד: בלי טקסט אין על מה לשים את הקישור לתיקייה."""
+    with pytest.raises(ValueError):
+        _build(tmp_path, "🌊🌊")
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("וילה\u202e בכרמל", "וילה בכרמל"),  # RLO: היה הופך את סדר האותיות
+        ("\u200fוילה בכרמל\u200e", "וילה בכרמל"),  # RLM/LRM מהעתקה מדפדפן
+        ("ג'ורג'\u200b סטודיו", "ג'ורג' סטודיו"),  # רווח באורך אפס
+        ("וילה\u0085בכרמל", "וילה בכרמל"),  # תו בקרה C1 → רווח
+    ],
+)
+def test_invisible_format_characters_are_removed(raw, expected):
+    assert clean_title(raw) == expected
+
+
+def test_metadata_title_has_no_direction_controls(tmp_path):
+    out, _, _ = _build(tmp_path, "וילה\u202e בכרמל", ratios=((1, 1),))
+    assert PdfReader(out).metadata.title == "וילה בכרמל"
+
+
+@pytest.mark.parametrize("bad", ["", "   ", None, 5, "א" * 121, "\u200f\u202e"])
 def test_invalid_titles_are_refused(bad):
     with pytest.raises(ValueError):
         clean_title(bad)

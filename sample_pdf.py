@@ -33,7 +33,7 @@ from google_api import (
     http_error_reason,
     http_status,
 )
-from pdf_builder import TITLE_MAX_CHARS, clean_title, folder_url, pdf_filename
+from pdf_builder import TITLE_MAX_CHARS, clean_title, drawable_title, folder_url, pdf_filename
 from pdf_job import MAX_IMAGES, FetchError, SourceItem, run_pdf_job
 from storage import atomic_write_bytes, data_dir_problem
 
@@ -126,10 +126,15 @@ def _drive_fetch(item: SourceItem, dest) -> int:
 
 @bp.get("/dev/sample-pdf")
 def page():
+    """הטופס, ותוצאות הריצה האחרונה אם יש."""
     services = current_app.extensions["images2pdf"]
     disk_problem = data_dir_problem(services.settings.data_dir)
     last = _load_last() if disk_problem is None else None
-    connected = services.token_store is not None and services.token_store.version() is not None
+    # כשהדיסק לא תקין לא נוגעים בקובץ ההרשאה: stat על נתיב בתוך "תיקייה" שהיא קובץ
+    # זורק NotADirectoryError, והדף שאמור להציג את הבעיה היה נופל ב-500.
+    connected = (
+        disk_problem is None and services.token_store is not None and services.token_store.version() is not None
+    )
     return render_template(
         "sample_pdf.html",
         last=last,
@@ -148,6 +153,7 @@ def _error(title: str, message: str, status: int, hint: str | None = None):
 
 @bp.post("/dev/sample-pdf/run")
 def run():
+    """יוצר PDF מ-12 התמונות הראשונות בתיקייה, שומר אותו ואת המדידות, וחוזר לדף."""
     folder_id = (request.form.get("folder_id") or "").strip()
     if not is_valid_drive_id(folder_id):
         return _error("מזהה תיקייה לא תקין", "מזהה תיקייה מכיל רק אותיות באנגלית, ספרות, מקף וקו תחתון.", 400,
@@ -171,6 +177,9 @@ def run():
             title = clean_title(raw_title if raw_title.strip() else folder["name"])
         except ValueError:
             return _error("כותרת לא תקינה", f"הכותרת צריכה להכיל בין 1 ל-{TITLE_MAX_CHARS} תווים.", 400)
+        if not drawable_title(title):
+            return _error("כותרת לא תקינה", "בכותרת אין אף תו שאפשר להציג בקובץ (למשל רק אמוג'י).", 400,
+                          "מקלידים כותרת אחרת בשדה הכותרת.")
 
         items = _first_images(folder_id)
         if not items:
@@ -229,6 +238,13 @@ def run():
             atomic_write_bytes(_result_path(), json.dumps(summary, ensure_ascii=False).encode("utf-8"))
         except OSError:
             logger.error("Could not save the sample PDF result", exc_info=True)
+            if job.ok:
+                # ה-PDF כבר הוחלף בחדש, אבל התוצאה הישנה (עם שם הקובץ הישן) נשארה. מוחקים
+                # אותה, כדי שהדף לא יציג את הריצה הקודמת ויוריד את הקובץ החדש תחת שמה.
+                try:
+                    _result_path().unlink(missing_ok=True)
+                except OSError:
+                    logger.error("Could not remove the stale sample PDF result", exc_info=True)
             return _error("התוצאה לא נשמרה", "הקובץ נוצר, אבל שמירת התוצאה לדיסק נכשלה.", 500)
     finally:
         _job_lock.release()
@@ -237,6 +253,7 @@ def run():
 
 @bp.get("/dev/sample-pdf/file")
 def download():
+    """הורדת הקובץ האחרון, בשם `<כותרת> <DD-MM-YYYY>.pdf`."""
     last = _load_last()
     path = _pdf_path()
     if not last or not last.get("ok") or not path.is_file():

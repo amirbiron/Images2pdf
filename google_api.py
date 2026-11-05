@@ -299,6 +299,10 @@ def drive_upload_bytes(name: str, data: bytes, mimetype: str, parent_id: str) ->
 # מקור: googleapiclient/http.py, DEFAULT_CHUNK_SIZE = 100 * 1024 * 1024 ו-MediaIoBaseDownload.next_chunk
 DOWNLOAD_CHUNK_BYTES = 4 * 1024 * 1024
 MAX_DOWNLOAD_BYTES = 150 * 1024 * 1024
+# ניסיונות חוזרים לכל חתיכה, בהמתנה אקראית שגדלה: googleapiclient חוזר רק על תקלות
+# זמניות (5xx, 429, ניתוק או timeout), והחתיכה נכתבת לקובץ רק אחרי תשובה תקינה.
+# מקור: googleapiclient/http.py, MediaIoBaseDownload.next_chunk ו-_retry_request
+DOWNLOAD_RETRIES = 3
 
 
 class DownloadTooLarge(Exception):
@@ -324,7 +328,7 @@ def drive_download_to_file(file_id: str, dest: "os.PathLike[str] | str") -> int:
             downloader = MediaIoBaseDownload(fh, request, chunksize=DOWNLOAD_CHUNK_BYTES)
             done = False
             while not done:
-                _, done = downloader.next_chunk()
+                _, done = downloader.next_chunk(num_retries=DOWNLOAD_RETRIES)
                 if fh.tell() > MAX_DOWNLOAD_BYTES:
                     raise DownloadTooLarge(fh.tell())
             written = fh.tell()

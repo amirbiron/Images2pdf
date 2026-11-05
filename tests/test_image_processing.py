@@ -138,3 +138,40 @@ def test_image_over_100_megapixels_is_processed_with_low_memory(tmp_path):
     assert (width, height) == (2000, 1500)
     print(f"108MP JPEG: peak RSS {peak_mb}MB")
     assert peak_mb < 200, f"peak RSS {peak_mb}MB"
+
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+def test_display_p3_photo_is_converted_to_srgb(tmp_path):
+    """תמונה מאייפון מסומנת Display P3. ה-PDF מתייחס לכל JPEG כ-sRGB, ולכן בלי המרה
+    הצבע (200,100,50) היה נשאר כמו שהוא ונראה דהוי. אחרי ההמרה הוא רווי יותר."""
+    icc = (FIXTURES / "DisplayP3-v4.icc").read_bytes()
+    src = tmp_path / "iphone.jpg"
+    Image.new("RGB", (1200, 900), (200, 100, 50)).save(src, "JPEG", quality=95, icc_profile=icc)
+    out = process_image(src, tmp_path / "out.jpg", "iphone.jpg")
+    with Image.open(out.path) as result:
+        r, g, b = result.getpixel((600, 450))
+        assert r >= 210 and g <= 96 and b <= 36, (r, g, b)  # ImageCms: (215, 93, 31)
+        assert not result.info.get("icc_profile")  # הפלט הוא sRGB לא מסומן, כמו שה-PDF מניח
+
+
+def test_broken_icc_profile_falls_back_to_plain_conversion(tmp_path):
+    src = tmp_path / "bad-profile.jpg"
+    Image.new("RGB", (800, 600), (200, 100, 50)).save(src, "JPEG", quality=95, icc_profile=b"not an icc profile at all")
+    out = process_image(src, tmp_path / "out.jpg", "bad-profile.jpg")
+    with Image.open(out.path) as result:
+        r, g, b = result.getpixel((400, 300))
+        assert abs(r - 200) < 6 and abs(g - 100) < 6 and abs(b - 50) < 6, (r, g, b)
+
+
+def test_rgb_png_with_transparent_colour_gets_white_background(tmp_path):
+    """PNG במצב RGB עם צבע שקוף (tRNS): Pillow משאיר אותו RGB ושומר את הצבע ב-info."""
+    src = tmp_path / "trns.png"
+    img = Image.new("RGB", (400, 300), (10, 20, 30))
+    img.save(src, "PNG", transparency=(10, 20, 30))
+    with Image.open(src) as check:
+        assert check.mode == "RGB" and check.info.get("transparency") == (10, 20, 30)
+    out = process_image(src, tmp_path / "out.jpg", "trns.png")
+    with Image.open(out.path) as result:
+        assert min(result.getpixel((200, 150))) > 245

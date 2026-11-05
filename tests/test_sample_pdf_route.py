@@ -135,3 +135,40 @@ def test_parallel_requests_create_one_file_at_a_time(app, drive, monkeypatch):
 def test_requires_login_and_no_file_before_first_run(client, logged_in):
     assert client.get(f"{BASE_URL}/dev/sample-pdf").status_code == 302
     assert logged_in.get(f"{BASE_URL}/dev/sample-pdf/file").status_code == 404
+
+
+def test_title_without_drawable_characters_is_a_clear_400(app, logged_in, drive):
+    resp = logged_in.post(f"{BASE_URL}/dev/sample-pdf/run", data={"folder_id": drive.folder_id, "title": "🌊🌊"})
+    assert resp.status_code == 400
+    assert "אין אף תו שאפשר להציג" in resp.get_data(as_text=True)
+
+
+def test_failed_result_save_does_not_leave_a_mismatched_pair(app, logged_in, drive, monkeypatch):
+    """ה-PDF הוחלף אבל שמירת התוצאה נכשלה: התוצאה הישנה (עם השם הישן) לא נשארת."""
+    logged_in.post(f"{BASE_URL}/dev/sample-pdf/run", data={"folder_id": drive.folder_id, "title": "ריצה ראשונה"})
+    assert _last(app)["title"] == "ריצה ראשונה"
+
+    def broken_write(path, data):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(sample_pdf, "atomic_write_bytes", broken_write)
+    resp = logged_in.post(f"{BASE_URL}/dev/sample-pdf/run", data={"folder_id": drive.folder_id, "title": "ריצה שנייה"})
+    assert resp.status_code == 500
+    assert not (app.extensions["images2pdf"].settings.data_dir / "dev_sample_last.json").exists()
+    assert logged_in.get(f"{BASE_URL}/dev/sample-pdf/file").status_code == 404
+    assert "ריצה ראשונה" not in logged_in.get(f"{BASE_URL}/dev/sample-pdf").get_data(as_text=True)
+
+
+@pytest.mark.parametrize("path", ["/dev/sample-pdf", "/dev/checks"])
+def test_diagnostic_pages_show_a_broken_data_dir_instead_of_500(make_app, tmp_path, path):
+    """DATA_DIR שמצביע על קובץ ולא על תיקייה: הדף מציג את הבעיה, ולא נופל."""
+    from helpers import PASSWORD
+
+    not_a_dir = tmp_path / "data-is-a-file"
+    not_a_dir.write_text("oops")
+    app = make_app(DATA_DIR=str(not_a_dir))
+    c = app.test_client()
+    assert c.post(f"{BASE_URL}/login", data={"password": PASSWORD}).status_code == 303
+    resp = c.get(f"{BASE_URL}{path}")
+    assert resp.status_code == 200
+    assert "חסרות הגדרות" in resp.get_data(as_text=True)
