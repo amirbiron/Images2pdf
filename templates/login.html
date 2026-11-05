@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}כניסה — כלי PDF ללוקיישנים{% endblock %}
+{% block content %}
+<section class="card narrow">
+  <h1>כניסה</h1>
+  <p class="muted">מקלידים את הסיסמה כדי להיכנס לכלי.</p>
+  {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" action="/login" class="stack">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label for="password">סיסמה</label>
+    <input type="password" id="password" name="password" autocomplete="current-password" maxlength="1024" required autofocus>
+    <button type="submit" class="button">כניסה</button>
+  </form>
+</section>
+{% endblock %}

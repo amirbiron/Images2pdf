@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h1>חיבור לגוגל דרייב</h1>
+  {% if just_connected %}<p class="alert alert-ok" role="status">החשבון חובר בהצלחה.</p>{% endif %}
+  {% if just_disconnected %}<p class="alert alert-ok" role="status">החיבור נותק וההרשאה בוטלה אצל גוגל.</p>{% endif %}
+
+  {% if problems %}
+    <p class="alert alert-error">אי אפשר לחבר את גוגל עד שההגדרות האלה יושלמו ב-Render:</p>
+    <ul class="list">{% for p in problems %}<li>{{ p }}</li>{% endfor %}</ul>
+  {% elif status.state == "connected" %}
+    <p>מחובר לחשבון <strong dir="ltr">{{ status.email }}</strong>, מאז <span dir="ltr">{{ status.connected_at }}</span> (UTC).</p>
+    {% if status.time_limited %}<p class="alert alert-warn">בחרת בגוגל גישה מוגבלת בזמן. כשהיא תפוג, יופיע מסך חיבור מחדש.</p>{% endif %}
+    <div class="row">
+      <a class="button" href="/dev/checks">לדף הבדיקות</a>
+      <form method="post" action="/oauth/disconnect" class="inline-form"><button type="submit" class="button button-secondary">ניתוק החשבון</button></form>
+    </div>
+  {% elif status.state == "unreadable" %}
+    <p class="alert alert-warn">יש הרשאה שמורה, אבל אי אפשר לקרוא אותה (כנראה מפתח ההצפנה הוחלף). צריך לחבר מחדש.</p>
+    <form method="post" action="/oauth/start"><button type="submit" class="button">חיבור מחדש לגוגל</button></form>
+  {% else %}
+    <p>החשבון עוד לא מחובר.</p>
+    <form method="post" action="/oauth/start"><button type="submit" class="button">חיבור לגוגל</button></form>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>להגדרה ב-Google Cloud</h2>
+  <p class="muted">את הכתובת הזו מעתיקים לשדה Authorized redirect URIs של לקוח ה-OAuth:</p>
+  <p><code class="copy" dir="ltr">{{ redirect_uri }}</code></p>
+</section>
+{% endblock %}

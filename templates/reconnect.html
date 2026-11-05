@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card narrow">
+  <h1>{{ title }}</h1>
+  <p>{{ message }}</p>
+  <form method="post" action="/oauth/start">
+    <button type="submit" class="button">חיבור מחדש לגוגל</button>
+  </form>
+</section>
+{% endblock %}

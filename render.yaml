@@ -1,0 +1,34 @@
+# Blueprint של Render. מקור לשדות: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: images2pdf
+    runtime: docker
+    # 0.5 CPU / 512MB — מה שנקרא בעבר Starter.
+    plan: 0.5c-512mb
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    # הדיסק הקבוע: ההרשאה המוצפנת של גוגל ומצבים קטנים. זמין רק בזמן ריצה (לא ב-build).
+    # עם דיסק אין zero-downtime deploy: Render עוצר את המופע הישן לפני שהחדש עולה.
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data
+      # מפתח ההצפנה של ההרשאה. Render מייצר ערך אקראי של 256 ביט ביצירה הראשונה.
+      - key: TOKEN_ENCRYPTION_KEY
+        generateValue: true
+      # הערכים הבאים מוזנים ידנית בדשבורד של Render (sync: false): סיסמת הכניסה,
+      # פרטי לקוח ה-OAuth מ-Google Cloud, והחשבון היחיד שמותר לחבר.
+      - key: WEB_PANEL_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: ALLOWED_GOOGLE_EMAIL
+        sync: false
