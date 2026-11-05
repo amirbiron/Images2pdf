@@ -89,7 +89,7 @@ class FakeDrive:
     def get_media(self, fileId=None, **kw):
         return _Exec(lambda: self.files_by_id[fileId]["content"])
 
-    def list(self, q="", fields=None, pageSize=100, pageToken=None, **kw):
+    def list(self, q="", fields=None, pageSize=100, pageToken=None, orderBy=None, **kw):
         self.queries.append(q)
 
         def run():
@@ -113,6 +113,10 @@ class FakeDrive:
                 items = [f for f in items if f["name"].casefold().startswith(needle)
                          or any(w.casefold().startswith(needle) for w in f["name"].split())]
             _validate_quoting(q)
+            if orderBy == "folder,name":  # תיקיות קודם, ואז לפי שם — כמו שהקוד מבקש מדרייב
+                items.sort(key=lambda f: (f["mimeType"] != FOLDER, f["name"]))
+            elif orderBy is not None:
+                raise AssertionError(f"unsupported orderBy in fake: {orderBy}")
             start = int(pageToken or 0)
             page = items[start:start + pageSize]
             out = {"files": [{k: v for k, v in f.items() if k not in ("by_app", "content") and v is not None} for f in page]}

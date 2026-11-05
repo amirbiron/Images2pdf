@@ -5,6 +5,11 @@ google-auth==2.62.1
 google-auth-httplib2==0.4.4
 requests==2.34.2
 cryptography==50.0.2
+Pillow==13.0.0
+reportlab==5.1.0
+python-bidi==0.6.12
+# אזור הזמן של ישראל לתאריך בשם הקובץ, גם בתמונת Docker שאין בה מסד אזורי זמן של המערכת.
+tzdata==2026.6
 
 # תלויות עקיפות: רצפה מפורשת לגרסה שאינה פגיעה. השרשראות שמביאות אותן מתירות
 # היום גם גרסאות ישנות (requests: certifi>=2023.5.7; google-api-python-client

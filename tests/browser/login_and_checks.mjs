@@ -39,6 +39,15 @@ writeFileSync(join(dataDir, "dev_checks_last.json"), JSON.stringify({
   thumbnail_report: null,
 }));
 
+// PDF לדוגמה מוכן מראש, כדי לבדוק את ההורדה דרך לחיצה אמיתית (שם קובץ בעברית).
+writeFileSync(join(dataDir, "dev_sample.pdf"), "%PDF-1.3\n%%EOF\n");
+writeFileSync(join(dataDir, "dev_sample_last.json"), JSON.stringify({
+  ok: true, ran_at: "2026-11-05T10:00:00+00:00", folder_id: "sampleFolder123", title: "וילה בכרמל",
+  filename: "וילה בכרמל 05-11-2026.pdf", requested: 1, processed: 1, failed: [], orientation: "portrait", pages: 1,
+  removed_characters: "", source_mb: 0.1, pdf_kb: 1, seconds: { total: 1, fetch: 0, process: 0, build: 0 },
+  memory_mb: { rss_start: 1, rss_peak: 1, cgroup_start: null, cgroup_peak: null, samples: 1 },
+}));
+
 const server = spawn(GUNICORN, ["-c", join(ROOT, "gunicorn.conf.py"), "--bind", `127.0.0.1:${port}`, "wsgi:app"], {
   cwd: ROOT,
   env: { ...process.env, APP_ENV: "production", DATA_DIR: dataDir, WEB_PANEL_SECRET: PASSWORD, PORT: String(port) },
@@ -48,7 +57,8 @@ let serverLog = "";
 server.stdout.on("data", (d) => { serverLog += d; });
 server.stderr.on("data", (d) => { serverLog += d; });
 
-const browser = await chromium.launch();
+// בלי locale של UTF-8, Chromium מחליף כל שם קובץ שאינו ASCII ב-"download" (נמדד בסביבת הבדיקה).
+const browser = await chromium.launch({ env: { ...process.env, LANG: "C.UTF-8", LC_ALL: "C.UTF-8" } });
 try {
   for (let i = 0; i < 50; i++) {
     try { const r = await fetch(`${base}/healthz`); if (r.ok) break; } catch { /* עוד עולה */ }
@@ -88,6 +98,10 @@ try {
   assert(/Thumbnail check from browser: direct ok=1 failed=1/.test(serverLog), "הסיכום נרשם בלוג של השרת");
 
   await page.screenshot({ path: process.env.SHOT || join(dataDir, "dev-checks.png"), fullPage: true });
+  await page.goto(`${base}/dev/sample-pdf`);
+  assert((await page.textContent("h1")).includes("PDF לדוגמה"), "הדף /dev/sample-pdf נטען אחרי כניסה");
+  const [download] = await Promise.all([page.waitForEvent("download"), page.click("a[href='/dev/sample-pdf/file']")]);
+  assert(download.suggestedFilename() === "וילה בכרמל 05-11-2026.pdf", `ההורדה מקבלת את השם בעברית (${download.suggestedFilename()})`);
   await page.goto(`${base}/`);
   assert(cspViolations.length === 0, `אין הפרות CSP (${cspViolations.join(" | ")})`);
   console.log("ALL BROWSER CHECKS PASSED");

@@ -83,3 +83,7 @@ input:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid 
 .ok { color: var(--ok-text); font-weight: 600; }
 .bad { color: var(--err-text); font-weight: 600; }
 .cell-none { color: var(--muted); }
+
+.metrics { border-collapse: collapse; width: 100%; max-width: 640px; }
+.metrics th, .metrics td { border: 1px solid var(--border); padding: 8px 10px; text-align: start; }
+.metrics th { font-weight: 600; width: 45%; background: #faf9f6; }

@@ -14,7 +14,7 @@
       <input type="text" id="folder_id" name="folder_id" value="{{ default_folder_id }}" dir="ltr" maxlength="200" required autocomplete="off" spellcheck="false">
       <p class="muted">החלק שאחרי <span dir="ltr">folders/</span> בכתובת של התיקייה.</p>
       <button type="submit" class="button" id="run-button">הרצת הבדיקות</button>
-      <p class="muted" id="run-wait" hidden>מריץ את הבדיקות מול גוגל. זה יכול לקחת עד דקה.</p>
+      <p class="muted" id="run-wait" role="status" data-wait="מריץ את הבדיקות מול גוגל. זה יכול לקחת עד דקה."></p>
     </form>
   {% endif %}
 </section>
@@ -62,5 +62,6 @@
 {% endif %}
 {% endblock %}
 {% block scripts %}
+<script src="{{ url_for('static', filename='form_wait.js') }}"></script>
 <script src="{{ url_for('static', filename='dev_checks.js') }}"></script>
 {% endblock %}

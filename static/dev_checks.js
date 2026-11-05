@@ -4,16 +4,6 @@
 (function () {
   "use strict";
 
-  var form = document.getElementById("run-form");
-  if (form) {
-    form.addEventListener("submit", function () {
-      var button = document.getElementById("run-button");
-      var wait = document.getElementById("run-wait");
-      if (button) { button.disabled = true; }
-      if (wait) { wait.hidden = false; }
-    });
-  }
-
   var rows = Array.prototype.slice.call(document.querySelectorAll("tr[data-thumb-id]"));
   if (rows.length === 0) { return; }
 
