@@ -16,6 +16,7 @@ from google.auth.exceptions import RefreshError
 import auth
 import dev_checks
 import oauth
+import sample_pdf
 import thumbnails
 from config import Settings, load_settings
 from google_api import GoogleNotConnected, forget_cached_clients, refresh_error_kind
@@ -86,6 +87,7 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(oauth.bp)
     app.register_blueprint(dev_checks.bp)
     app.register_blueprint(thumbnails.bp)
+    app.register_blueprint(sample_pdf.bp)
 
     app.add_url_rule("/healthz", "healthz", healthz)
     app.add_url_rule("/", "index", index)

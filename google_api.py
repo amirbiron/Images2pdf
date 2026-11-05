@@ -14,8 +14,10 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from flask import current_app, g
@@ -23,7 +25,7 @@ from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
 from config import DRIVE_SCOPES, GOOGLE_TOKEN_URL, is_valid_drive_id
 from token_store import StoredGrant, TokenStore, TokenUnreadable
@@ -288,6 +290,48 @@ def drive_upload_bytes(name: str, data: bytes, mimetype: str, parent_id: str) ->
         )
         .execute()
     )
+
+
+# ─── הורדה ────────────────────────────────────────────────────
+
+# googleapiclient מוריד כברירת מחדל בחתיכות של 100MB, וכל חתיכה נקראת כולה לזיכרון
+# לפני הכתיבה לקובץ. 4MB מגבילים את מה שיושב בזיכרון בכל רגע.
+# מקור: googleapiclient/http.py, DEFAULT_CHUNK_SIZE = 100 * 1024 * 1024 ו-MediaIoBaseDownload.next_chunk
+DOWNLOAD_CHUNK_BYTES = 4 * 1024 * 1024
+MAX_DOWNLOAD_BYTES = 150 * 1024 * 1024
+
+
+class DownloadTooLarge(Exception):
+    """הקובץ גדול מ-MAX_DOWNLOAD_BYTES."""
+
+
+def drive_download_to_file(file_id: str, dest: "os.PathLike[str] | str") -> int:
+    """מוריד קובץ מדרייב לקובץ בדיסק (ולא לזיכרון). מחזיר את מספר הבתים.
+
+    מחליף את `drive_download_bytes` של הפאנל המקורי, שטען את כל הקובץ ל-BytesIO.
+    זורק DownloadTooLarge, HttpError או OSError; בכל כשל הקובץ החלקי נמחק.
+    """
+    if not is_valid_drive_id(file_id):
+        raise ValueError("invalid file id")
+    meta = drive_get(file_id, "size")
+    size = meta.get("size")
+    if isinstance(size, str) and size.isdigit() and int(size) > MAX_DOWNLOAD_BYTES:
+        raise DownloadTooLarge(int(size))
+    request = get_drive_service().files().get_media(fileId=file_id, supportsAllDrives=True)
+    dest_path = Path(dest)
+    try:
+        with open(dest_path, "wb") as fh:
+            downloader = MediaIoBaseDownload(fh, request, chunksize=DOWNLOAD_CHUNK_BYTES)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+                if fh.tell() > MAX_DOWNLOAD_BYTES:
+                    raise DownloadTooLarge(fh.tell())
+            written = fh.tell()
+    except BaseException:
+        dest_path.unlink(missing_ok=True)
+        raise
+    return written
 
 
 # ─── תמונות ממוזערות ──────────────────────────────────────────

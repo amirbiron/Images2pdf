@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}PDF לדוגמה — כלי PDF ללוקיישנים{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>PDF לדוגמה</h1>
+  <p class="muted">יוצר קובץ מ-12 התמונות הראשונות בתיקייה (לפי שם, בלי תתי-תיקיות), ומודד זמן, זיכרון ומשקל.</p>
+  {% if google_problems or disk_problem %}
+    <p class="alert alert-error">חסרות הגדרות, ולכן אי אפשר ליצור קובץ. הפרטים בדף הבית.</p>
+  {% elif not connected %}
+    <p class="alert alert-warn">חשבון הגוגל לא מחובר. מחברים מדף הבית, ואז חוזרים לכאן.</p>
+    <p><a class="button" href="/">לדף הבית</a></p>
+  {% else %}
+    <form method="post" action="/dev/sample-pdf/run" class="stack" id="sample-form">
+      <label for="folder_id">מזהה התיקייה בדרייב</label>
+      <input type="text" id="folder_id" name="folder_id" value="{{ default_folder_id }}" dir="ltr" maxlength="200" required autocomplete="off" spellcheck="false">
+      <p class="muted">החלק שאחרי <span dir="ltr">folders/</span> בכתובת של התיקייה.</p>
+      <label for="title">כותרת (לא חובה)</label>
+      <input type="text" id="title" name="title" maxlength="{{ title_max }}" placeholder="ברירת המחדל: שם התיקייה" autocomplete="off">
+      <button type="submit" class="button" id="sample-button">יצירת PDF</button>
+      <p class="muted" id="sample-wait" hidden>מכין את הקובץ, זה יכול לקחת עד דקה.</p>
+    </form>
+  {% endif %}
+</section>
+
+{% if last %}
+<section class="card" id="result">
+  <h2>הריצה האחרונה</h2>
+  <p class="muted">רצה ב-<span dir="ltr">{{ last.ran_at }}</span> (UTC). תיקייה: <code dir="ltr">{{ last.folder_id }}</code></p>
+  {% if last.ok %}
+    <p class="alert alert-ok">נוצר קובץ של {{ last.pages }} עמודים ({{ "לרוחב" if last.orientation == "landscape" else "לאורך" }}) מ-{{ last.processed }} תמונות.</p>
+    {% if pdf_ready %}
+      <p><a class="button" href="/dev/sample-pdf/file">הורדת הקובץ</a> <bdi class="muted" dir="ltr">{{ last.filename }}</bdi></p>
+    {% endif %}
+  {% else %}
+    <p class="alert alert-error">לא נוצר קובץ: אף תמונה לא עובדה בהצלחה.</p>
+  {% endif %}
+
+  {% if last.failed %}
+    <h3>תמונות שלא נכנסו</h3>
+    <ul class="list">{% for f in last.failed %}<li><strong>{{ f.name }}</strong>: {{ f.reason }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if last.removed_characters %}
+    <p class="alert alert-warn">תווים שאין להם צורה בפונט הושמטו מהכותרת: <span dir="ltr">{{ last.removed_characters }}</span></p>
+  {% endif %}
+
+  <h3>מדידות</h3>
+  <div class="table-wrap">
+    <table class="metrics">
+      <tbody>
+        <tr><th>זמן כולל</th><td>{{ last.seconds.total }} שניות</td></tr>
+        <tr><th>הורדה מדרייב</th><td>{{ last.seconds.fetch }} שניות ({{ last.source_mb }}MB)</td></tr>
+        <tr><th>עיבוד תמונות</th><td>{{ last.seconds.process }} שניות</td></tr>
+        <tr><th>כתיבת ה-PDF</th><td>{{ last.seconds.build }} שניות</td></tr>
+        <tr><th>משקל הקובץ</th><td>{{ last.pdf_kb }}KB</td></tr>
+        <tr><th>שיא זיכרון של התהליך</th><td>{{ last.memory_mb.rss_peak }}MB (בתחילת הריצה {{ last.memory_mb.rss_start }}MB)</td></tr>
+        <tr><th>שיא זיכרון של השירות כולו</th><td>{% if last.memory_mb.cgroup_peak is not none %}{{ last.memory_mb.cgroup_peak }}MB (בתחילת הריצה {{ last.memory_mb.cgroup_start }}MB){% else %}לא זמין{% endif %}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">המגבלה של השירות היא 512MB. "השירות כולו" הוא המספר ש-Render בודק, והוא כולל גם זיכרון מטמון של קבצים שמערכת ההפעלה משחררת כשצריך.</p>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='sample_pdf.js') }}"></script>
+{% endblock %}
