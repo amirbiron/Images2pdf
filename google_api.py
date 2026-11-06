@@ -189,11 +189,12 @@ def escape_query_value(text: str) -> str:
 
 
 def drive_search_folders(text: str, page_token: str | None = None, page_size: int = 100) -> dict:
-    """חיפוש תיקיות לפי שם.
+    """חיפוש תיקיות לפי שם, ממוין לפי שם במיון טבעי (1, 2, 12 ולא 1, 12, 2).
 
     `name contains` בדרייב הוא התאמת קידומת ולא תת-מחרוזת: 'Hello' מוצא את
     HelloWorld, ו-'World' לא. מקור:
     https://developers.google.com/workspace/drive/api/guides/ref-search-terms
+    מקור ל-name_natural: מסמך ה-discovery של drive v3, הפרמטר orderBy של files.list.
     """
     query = (
         f"mimeType = '{FOLDER_MIME}' and name contains '{escape_query_value(text)}' "
@@ -207,6 +208,7 @@ def drive_search_folders(text: str, page_token: str | None = None, page_size: in
             fields="nextPageToken, incompleteSearch, files(id, name, parents)",
             pageSize=page_size,
             pageToken=page_token,
+            orderBy="name_natural",
             supportsAllDrives=True,
             includeItemsFromAllDrives=True,
         )
@@ -242,7 +244,7 @@ def drive_list_folder(
             fields="nextPageToken, files(id, name, mimeType, thumbnailLink, parents, capabilities(canEdit))",
             pageSize=page_size,
             pageToken=page_token,
-            orderBy="folder,name",
+            orderBy="folder,name_natural",
             supportsAllDrives=True,
             includeItemsFromAllDrives=True,
         )
@@ -261,6 +263,51 @@ def _list_result(result: object) -> dict:
         "nextPageToken": token if isinstance(token, str) else None,
         "incompleteSearch": result.get("incompleteSearch") is True,
     }
+
+
+FOLDER_NAMES_BATCH = 50  # דרייב מגביל batch ל-100 קריאות; 50 משאיר מרווח
+
+
+def drive_folder_names(ids) -> dict[str, str]:
+    """שמות של כמה תיקיות בבקשת batch אחת (במקום קריאה לכל תיקייה). {id: name}.
+
+    תיקייה שהחשבון לא רואה (למשל תיקיית אב של תיקייה ששותפה איתו) פשוט לא מופיעה
+    בתוצאה: זה מצב צפוי ולא תקלה. דרייב מחזיר עליה 404 notFound ("the user doesn't
+    have read access to a file, or the file doesn't exist"). כל כשל אחר של פריט —
+    403 של מגבלת קצב, 429, 5xx — הוא תקלה ולא "תיקייה נסתרת", ולכן הוא נזרק כמו
+    כשל של ה-batch כולו, והמשתמש מקבל "נסו שוב" במקום תוצאות בלי שם האב.
+    מקור לקודים: https://developers.google.com/workspace/drive/api/guides/handle-errors
+    מקור ל-API: googleapiclient/http.py (2.201.0), BatchHttpRequest.execute: כל תשובה
+    עם status >= 300 מגיעה ל-callback(request_id, response, exception) כ-HttpError.
+    """
+    unique = [i for i in dict.fromkeys(ids) if is_valid_drive_id(i)]
+    names: dict[str, str] = {}
+    hidden = 0
+    errors: list[HttpError] = []
+
+    def on_response(request_id, response, exception):
+        nonlocal hidden
+        if exception is None:
+            if isinstance(response, dict) and isinstance(response.get("name"), str):
+                names[request_id] = response["name"]
+            else:
+                logger.warning("Folder name lookup returned no name")
+        elif isinstance(exception, HttpError) and http_status(exception) == 404:
+            hidden += 1
+        else:
+            errors.append(exception)
+
+    svc = get_drive_service()
+    for start in range(0, len(unique), FOLDER_NAMES_BATCH):
+        batch = svc.new_batch_http_request(callback=on_response)
+        for folder_id in unique[start : start + FOLDER_NAMES_BATCH]:
+            batch.add(svc.files().get(fileId=folder_id, fields="name", supportsAllDrives=True), request_id=folder_id)
+        batch.execute()
+        if errors:
+            raise errors[0]  # הקורא רושם ללוג ומחזיר שגיאה; ראה picker_api._drive_failure
+    if hidden:
+        logger.info("Folder names: %d of %d not visible to the account", hidden, len(unique))
+    return names
 
 
 def drive_get(file_id: str, fields: str) -> dict:

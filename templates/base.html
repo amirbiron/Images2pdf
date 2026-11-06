@@ -10,15 +10,16 @@
   <header class="topbar">
     <a class="brand" href="/"><img src="{{ url_for('static', filename='logo.png') }}" alt="" class="brand-logo"><span>כלי PDF ללוקיישנים</span></a>
     {% if show_nav is not defined or show_nav %}
-    <nav class="nav">
-      <a href="/">בית</a>
+    <nav class="nav" aria-label="ניווט ראשי">
+      <a href="/">חיפוש</a>
+      <a href="/settings">חיבור לגוגל</a>
       <a href="/dev/checks">בדיקות</a>
       <a href="/dev/sample-pdf">PDF לדוגמה</a>
       <form method="post" action="/logout" class="inline-form"><button type="submit" class="link-button">יציאה</button></form>
     </nav>
     {% endif %}
   </header>
-  <main class="container">
+  <main class="{% block main_class %}container{% endblock %}">
     {% block content %}{% endblock %}
   </main>
   {% block scripts %}{% endblock %}

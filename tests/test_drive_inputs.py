@@ -34,7 +34,7 @@ def test_invalid_drive_ids(value):
 
 
 def test_valid_drive_id():
-    assert is_valid_drive_id("1B33DAnrMQ68EHqzWnSd2mRS-J5EtkQCW_x") is True
+    assert is_valid_drive_id("1AbCdEfGhIjKlMnOpQrStUvWxYz-12345_x") is True  # מזהה מומצא
 
 
 @pytest.mark.parametrize(

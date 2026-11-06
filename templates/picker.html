@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}בחירת תמונות — כלי PDF ללוקיישנים{% endblock %}
+{% block main_class %}picker-main{% endblock %}
+{% block content %}
+<div id="picker" class="picker" data-max="{{ max_images }}">
+
+  <section id="screen-search" class="screen" aria-labelledby="search-heading">
+    <h1 id="search-heading" class="visually-hidden">חיפוש לוקיישן</h1>
+    <form id="search-form" class="search-bar" role="search">
+      <label for="search-input" class="visually-hidden">שם הלוקיישן</label>
+      <input id="search-input" type="search" name="q" maxlength="100" autocomplete="off" spellcheck="false"
+             enterkeyhint="search" dir="auto" placeholder="חיפוש לוקיישן לפי שם">
+      <button type="submit" class="button">חיפוש</button>
+    </form>
+    <p class="muted search-hint">החיפוש מוצא תחילת מילה: "כרמ" ימצא את "וילה כרמל", אבל לא את "בכרמל".</p>
+    <p id="search-status" class="status" role="status"></p>
+    <ul id="search-results" class="results"></ul>
+    <button id="search-more" type="button" class="button button-secondary more" hidden>עוד תוצאות</button>
+  </section>
+
+  <section id="screen-location" class="screen" hidden aria-labelledby="location-heading">
+    <div class="location-bar">
+      <button id="back-button" type="button" class="button button-secondary back">חזרה</button>
+      <div class="location-titles">
+        <h1 id="location-heading" class="location-name"></h1>
+        <nav id="breadcrumb" class="breadcrumb" aria-label="תיקיות בתוך הלוקיישן"></nav>
+      </div>
+    </div>
+    <p id="location-status" class="status" role="status"></p>
+    <div id="grid" class="grid"></div>
+  </section>
+
+  <aside id="selection" class="selection" hidden aria-labelledby="selection-count">
+    <div class="selection-head">
+      <h2 id="selection-count" class="selection-count">לא נבחרו תמונות</h2>
+      <button id="clear-selection" type="button" class="link-button" hidden>ניקוי הבחירה</button>
+    </div>
+    <ol id="selection-strip" class="strip" aria-label="התמונות שנבחרו, לפי הסדר"></ol>
+    <div class="title-field">
+      <label for="title-input">כותרת ה-PDF</label>
+      <input id="title-input" type="text" maxlength="{{ title_max }}" dir="auto" autocomplete="off">
+    </div>
+  </aside>
+
+  <div id="toast" class="toast" role="alert" hidden></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='picker.js') }}"></script>
+{% endblock %}

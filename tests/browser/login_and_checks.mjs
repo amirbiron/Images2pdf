@@ -34,7 +34,8 @@ writeFileSync(join(dataDir, "dev_checks_last.json"), JSON.stringify({
   checks: [{ num: 5, title: "התמונות הממוזערות מוצגות", status: "info", lines: [{ status: "info", text: "x" }] }],
   thumbnails: [
     { id: "imgOk1", name: "loads.png", direct: `${base}/static/logo.png`, direct_host_allowed: false },
-    { id: "imgBad2", name: "blocked.jpg", direct: "https://blocked.invalid/x.jpg", direct_host_allowed: false },
+    // מארח של גוגל (מותר ב-CSP), שהבקשה אליו נחסמת בבדיקה עם page.route
+    { id: "imgBad2", name: "blocked.jpg", direct: "https://lh3.googleusercontent.com/blocked-in-test", direct_host_allowed: true },
   ],
   thumbnail_report: null,
 }));
@@ -68,6 +69,7 @@ try {
   const page = await context.newPage();
   const cspViolations = [];
   page.on("console", (m) => { if (/Content Security Policy|Refused to/.test(m.text())) cspViolations.push(m.text()); });
+  await page.route("https://lh3.googleusercontent.com/**", (route) => route.abort());
 
   await page.goto(`${base}/dev/checks`);
   assert(page.url().startsWith(`${base}/login?next=/dev/checks`), "לא מחובר → מועבר לכניסה");
@@ -90,6 +92,9 @@ try {
   assert(cells.every((c) => c.proxy.includes("נחסם")), "בלי חיבור לגוגל, הנתיב דרך השרת מסומן 'נחסם'");
   const summary = await page.textContent("#thumb-summary");
   assert(summary.startsWith("נכשל"), "הסיכום לא מדווח הצלחה כשחלק מהתמונות לא נטענו");
+  // תוויות הסטטוס (.badge) הן חלק מהשורה, ולא העיגול הממוקם של מספר הסדר בבורר.
+  const badges = await page.$$eval(".check .badge", (bs) => bs.map((b) => getComputedStyle(b).position));
+  assert(badges.length > 0 && badges.every((pos) => pos === "static"), `תוויות הסטטוס בדף הבדיקות במקומן (${badges.length}, ${[...new Set(badges)].join(",")})`);
 
   await page.waitForTimeout(500);
   const saved = JSON.parse(readFileSync(join(dataDir, "dev_checks_last.json"), "utf8"));

@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 BIDI = {chr(c) for c in (0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2066, 0x206A))}
 # קבצי קוד והגדרות בלבד. קבצי ה-Markdown (ROADMAP, CLAUDE.md) נכתבים בדפדפן ואינם קוד שרץ.
-SUFFIXES = {".py", ".html", ".js", ".css", ".yaml", ".yml", ".txt", ".toml", ".cfg"}
+SUFFIXES = {".py", ".html", ".js", ".mjs", ".css", ".yaml", ".yml", ".txt", ".toml", ".cfg"}
 
 
 def test_no_bidi_control_characters():

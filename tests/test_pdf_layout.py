@@ -108,6 +108,26 @@ def test_image_counts_and_page_breaks(count):
     assert [len(p.placements) for p in doc.pages] == [min(4, count - 4 * i) for i in range(math.ceil(count / 4))]
 
 
+@pytest.mark.parametrize("count", [1, 5, 9])
+def test_single_image_on_a_page_is_centred_at_column_size(count):
+    """תמונה בודדת בעמוד (קובץ של תמונה אחת, או העמוד האחרון של 5 או 9) ממורכזת לרוחב,
+    ונשארת ברוחב של עמודה — לא מוגדלת לרוחב העמוד."""
+    aspects = [(3 / 2, 2 / 3, 1.0, 9 / 16)[i % 4] for i in range(count)]
+    doc = layout_document(aspects)
+    last = doc.pages[-1]
+    assert len(last.placements) == 1
+    p = last.placements[0]
+    assert math.isclose(p.x + p.width / 2, doc.page_width / 2)
+    col_w = (doc.page_width - 2 * MARGIN_MM - GAP_MM) / 2
+    assert math.isclose(p.width, col_w * last.scale)
+    _check_document(doc, aspects)
+
+
+def test_two_images_still_use_both_columns():
+    page = layout_page([1.0, 1.0], 210, 297, has_header=False)
+    assert page.placements[0].x > page.placements[1].x  # ימין, ואז שמאל — לא ממורכזות
+
+
 def test_first_image_goes_right_and_ties_go_right():
     page = layout_page([1.0, 1.0, 1.0], 210, 297, has_header=False)
     right_x = page.block_x + page.block_width - page.placements[0].width
