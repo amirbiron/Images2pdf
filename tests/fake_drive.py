@@ -61,6 +61,7 @@ class FakeDrive:
         self.queries: list[str] = []
         self.update_attempts: list[str] = []
         self.batches: list[int] = []
+        self.get_errors: dict[str, tuple[int, str]] = {}  # fileId -> (status, reason): files.get נכשל כך
 
     # ─── בנייה ───
     def add(self, name, mime=FOLDER, parent=None, *, owned=False, shared=True, can_edit=False, by_app=False, content=b""):
@@ -84,6 +85,8 @@ class FakeDrive:
         if fileId is None:  # about().get(fields=...)
             return _Exec(lambda: {"user": {"emailAddress": "owner@example.com"}})
         def run():
+            if fileId in self.get_errors:
+                raise _http_error(*self.get_errors[fileId])
             f = self.files_by_id.get(fileId)
             if f is None:
                 raise _http_error(404, "notFound")

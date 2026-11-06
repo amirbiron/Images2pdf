@@ -173,9 +173,45 @@
     if (window.location.hash !== hash) { window.history.replaceState(null, "", hash); }
   }
 
+  // הכתובת של המסך שמוצג עכשיו — לשם חוזרים כשהמשתמש מבטל מעבר ללוקיישן אחר.
+  var shownHash = null;
+
+  // הבחירה שייכת ללוקיישן אחד, ומתאפסת רק במעבר ללוקיישן אחר (ROADMAP). המעבר יכול
+  // להגיע מתוצאת חיפוש, מכפתור "אחורה" או "קדימה" של הדפדפן, או מכתובת שהודבקה —
+  // ולכן האישור נמצא כאן, בנקודה שכל המסלולים עוברים בה, ולא רק בלחיצה על תוצאה.
+  function confirmSwitch(locId) {
+    var n = state.selection.length;
+    if (!state.location || state.location.id === locId || n === 0) { return true; }
+    var from = state.location.name ? "מ\"" + state.location.name + "\" " : "";
+    return window.confirm(n === 1
+      ? "לעבור ללוקיישן אחר? התמונה שנבחרה " + from + "תימחק מהבחירה."
+      : "לעבור ללוקיישן אחר? " + n + " התמונות שנבחרו " + from + "יימחקו מהבחירה.");
+  }
+
+  function switchLocation(locId) {
+    if (state.location && state.location.id === locId) { return; }
+    state.location = { id: locId, name: nameOf(locId) };
+    state.selection = [];
+    state.title = nameOf(locId);
+    state.titleEdited = false;
+    saveState();
+  }
+
   function route() {
     var r = parseHash();
-    if (r.screen === "location") { showLocation(r.path); } else { showSearch(r.q); }
+    if (r.screen === "location") {
+      if (!confirmSwitch(r.path[0])) {
+        // ביטול: הכתובת חוזרת למסך שמוצג, בלי לגעת בבחירה. replaceState לא מפעיל hashchange.
+        replaceHash(shownHash || locationHash([state.location.id]));
+        if (shownHash === null) { route(); } // טעינה ראשונה: עדיין לא הוצג מסך, מציגים את הלוקיישן השמור
+        return;
+      }
+      switchLocation(r.path[0]);
+      showLocation(r.path);
+    } else {
+      showSearch(r.q);
+    }
+    shownHash = window.location.hash || "#/";
   }
 
   // ─── מסך החיפוש ────────────────────────────────────────────
@@ -211,12 +247,16 @@
       (Array.isArray(data.results) ? data.results : []).forEach(renderResult);
       var total = el.searchResults.children.length;
       search.token = typeof data.nextPageToken === "string" && data.nextPageToken ? data.nextPageToken : null;
+      var text;
       if (total === 0) {
-        setStatus(el.searchStatus, "לא נמצאו תיקיות שמתחילות ב-\"" + q + "\". החיפוש מוצא תחילת מילה, אז כדאי לנסות את תחילת השם.");
+        text = "לא נמצאו תיקיות שמתחילות ב-\"" + q + "\". החיפוש מוצא תחילת מילה, אז כדאי לנסות את תחילת השם.";
       } else {
         var found = total === 1 ? "נמצאה תיקייה אחת" : "נמצאו " + total + " תיקיות";
-        setStatus(el.searchStatus, search.token ? found + ", ויש עוד." : found + ".");
+        text = search.token ? found + ", ויש עוד." : found + ".";
       }
+      // incompleteSearch של דרייב: לא כל המקומות נסרקו, ולכן ייתכן שחסרות תוצאות.
+      if (data.incomplete === true) { text += " גוגל לא הספיק לחפש בכל המקומות, אז ייתכן שחסרות תוצאות. אפשר לחפש שוב."; }
+      setStatus(el.searchStatus, text);
       el.searchMore.hidden = !search.token;
     }).catch(function (err) {
       if (err.name === "AbortError" || seq !== search.seq) { return; }
@@ -247,13 +287,9 @@
   }
 
   function openLocation(id, name) {
-    var other = state.location && state.location.id !== id;
-    if (other && state.selection.length > 0) {
-      var ok = window.confirm("לעבור ללוקיישן אחר? " + state.selection.length + " התמונות שנבחרו מ\"" +
-        state.location.name + "\" יימחקו מהבחירה.");
-      if (!ok) { return; }
-    }
     rememberName(id, name);
+    if (!confirmSwitch(id)) { return; }
+    switchLocation(id);
     go(locationHash([id]));
   }
 
@@ -318,14 +354,6 @@
   }
 
   function showLocation(path) {
-    var locId = path[0];
-    if (!state.location || state.location.id !== locId) {
-      // מעבר ללוקיישן אחר: הבחירה מתאפסת. חזרה לאותו לוקיישן שומרת אותה.
-      state.location = { id: locId, name: nameOf(locId) };
-      state.selection = [];
-      state.title = nameOf(locId);
-      state.titleEdited = false;
-    }
     listing.path = path;
     saveState();
     path.forEach(function (id) { if (!nameOf(id)) { fetchName(id); } });
@@ -484,7 +512,7 @@
     name.textContent = displayName(item.name);
     button.appendChild(name);
     var badge = document.createElement("span");
-    badge.className = "badge";
+    badge.className = "order-badge";
     badge.setAttribute("aria-hidden", "true");
     button.appendChild(badge);
     button.addEventListener("click", function () { toggle(item); });
@@ -506,7 +534,7 @@
     button.setAttribute("aria-pressed", i >= 0 ? "true" : "false");
     var label = displayName(name);
     button.setAttribute("aria-label", i >= 0 ? label + ", נבחרה מספר " + (i + 1) : label);
-    button.querySelector(".badge").textContent = i >= 0 ? String(i + 1) : "";
+    button.querySelector(".order-badge").textContent = i >= 0 ? String(i + 1) : "";
   }
 
   function syncTiles() {
@@ -550,7 +578,7 @@
       button.title = displayName(item.name);
       button.appendChild(thumbImage(item.id, item.thumb));
       var badge = document.createElement("span");
-      badge.className = "badge";
+      badge.className = "order-badge";
       badge.setAttribute("aria-hidden", "true");
       badge.textContent = String(i + 1);
       button.appendChild(badge);

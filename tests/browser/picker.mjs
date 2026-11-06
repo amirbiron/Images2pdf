@@ -38,7 +38,7 @@ try {
 
     const tileCount = () => page.locator(".tile-image").count();
     const countText = () => page.textContent("#selection-count");
-    const badgeOf = (name) => page.locator(`.tile-image[data-name="${name}"] .badge`).textContent();
+    const badgeOf = (name) => page.locator(`.tile-image[data-name="${name}"] .order-badge`).textContent();
     const noOverflow = async (label) => {
       const ok = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
       assert(ok, `${vp.name}: אין גלילה לרוחב (${label})`);
@@ -58,6 +58,11 @@ try {
     await page.fill("#search-input", "אין כזה");
     await page.waitForFunction(() => document.getElementById("search-status").textContent.includes("לא נמצאו"));
     assert(true, `${vp.name}: מצב "אין תוצאות"`);
+    await page.route(/\/api\/drive\/search\?q=%D7%97%D7%9C%D7%A7%D7%99$/, (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [], nextPageToken: null, incomplete: true }) }));
+    await page.fill("#search-input", "חלקי");
+    await page.waitForFunction(() => document.getElementById("search-status").textContent.includes('"חלקי"'));
+    assert((await page.textContent("#search-status")).includes("ייתכן שחסרות תוצאות"), `${vp.name}: חיפוש שגוגל לא השלים מסומן ככזה`);
     // מרוץ: תשובה איטית לחיפוש קודם ("צי") מגיעה אחרי התשובה לחיפוש החדש ("וילה"), ולא דורסת אותה.
     let releaseSlow;
     const slowGate = new Promise((resolve) => { releaseSlow = resolve; });
@@ -87,6 +92,15 @@ try {
     const srcs = await page.$$eval(".tile-image img", (imgs) => imgs.map((i) => i.getAttribute("src")));
     assert(srcs.some((s) => s.startsWith("/api/drive/thumbnail/")) && srcs.some((s) => s.startsWith("https://")),
       `${vp.name}: תמונה שנחסמת בקישור הישיר נטענת דרך השרת, והשאר ישירות (${blocked} נחסמו)`);
+
+    const brokenNameOpacity = await page.evaluate(() => {
+      const img = document.querySelector('.tile-image[data-name="סלון 5.jpg"] img');
+      img.classList.add("thumb-broken");
+      const opacity = getComputedStyle(img.nextElementSibling).opacity;
+      img.classList.remove("thumb-broken");
+      return opacity;
+    });
+    assert(brokenNameOpacity === "1", `${vp.name}: כשתמונה ממוזערת לא נטענת, השם מוצג במקומה`);
 
     const box = await page.locator(".tile-image").first().boundingBox();
     assert(box.width >= 44 && box.height >= 44, `${vp.name}: אריח בגודל נוח למגע (${Math.round(box.width)}px)`);
@@ -126,6 +140,10 @@ try {
       const aside = await page.locator("#selection").boundingBox();
       const grid = await page.locator("#grid").boundingBox();
       assert(aside.x + aside.width <= grid.x + 1, `${vp.name}: לוח הבחירה בצד שמאל של הרשת`);
+      await page.evaluate(() => window.scrollTo(0, 1500));
+      const top = await page.evaluate(() => document.getElementById("selection").getBoundingClientRect().top);
+      assert(Math.abs(top - 16) <= 1, `${vp.name}: לוח הבחירה נשאר צמוד לראש המסך בגלילה (top=${Math.round(top)})`);
+      await page.evaluate(() => window.scrollTo(0, 0));
     }
 
     // 8. "אחורה" של הדפדפן חוזר לשורש הלוקיישן, והבחירה נשמרה
@@ -162,6 +180,28 @@ try {
     assert(dialogText.includes("11 התמונות"), `${vp.name}: לפני מעבר ללוקיישן אחר מוצגת אזהרה`);
     assert((await countText()) === "לא נבחרו תמונות", `${vp.name}: הבחירה מתאפסת במעבר ללוקיישן אחר`);
     assert((await page.inputValue("#title-input")) === "צימר ג'ורג' בגליל", `${vp.name}: הכותרת מתעדכנת ללוקיישן החדש`);
+
+    // 13. "אחורה" של הדפדפן עד הלוקיישן הקודם: אותה אזהרה. ביטול משאיר את הבחירה ואת הכתובת.
+    await page.waitForSelector('.tile-image[data-name="צימר 1.jpg"]');
+    await page.click('.tile-image[data-name="צימר 1.jpg"]');
+    await page.goBack({ waitUntil: "commit" }); // לחיפוש — בלי אזהרה, הבחירה לא נמחקת
+    await page.waitForSelector("#screen-search:not([hidden])");
+    const searchHashBefore = await page.evaluate(() => location.hash);
+    const dialogSeen = new Promise((resolve) => page.once("dialog", (d) => { resolve(d.message()); d.dismiss(); }));
+    await page.goBack({ waitUntil: "commit" }); // ל"וילה כרמל"
+    const backText = await Promise.race([dialogSeen, new Promise((r) => setTimeout(() => r(null), 3000))]);
+    assert(backText !== null && backText.includes("התמונה שנבחרה"), `${vp.name}: "אחורה" ללוקיישן אחר מציג אזהרה (${backText})`);
+    await page.waitForTimeout(200);
+    assert((await page.evaluate(() => location.hash)) === searchHashBefore && (await page.isVisible("#screen-search")),
+      `${vp.name}: ביטול משאיר את המסך ואת הכתובת`);
+    await page.click('.result:has-text("צימר ג\'ורג\' בגליל")'); // אותו לוקיישן — בלי אזהרה
+    await page.waitForSelector('.tile-image[data-name="צימר 1.jpg"]');
+    assert((await countText()) === "נבחרו 1 מתוך 12" && (await badgeOf("צימר 1.jpg")) === "1", `${vp.name}: אחרי ביטול הבחירה נשמרה`);
+    // כתובת של לוקיישן אחר שהודבקה: אישור מאפס את הבחירה
+    page.once("dialog", (d) => d.accept());
+    await page.evaluate((id) => { location.hash = "#/l/" + id; }, args.ids.villa);
+    await page.waitForFunction(() => document.getElementById("location-heading").textContent === "וילה כרמל");
+    assert((await countText()) === "לא נבחרו תמונות", `${vp.name}: אחרי אישור הבחירה מתאפסת`);
 
     assert(problems.length === 0, `${vp.name}: אין שגיאות JavaScript ואין הפרות CSP (${problems.join(" | ")})`);
     await context.close();

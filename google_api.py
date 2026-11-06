@@ -272,20 +272,30 @@ def drive_folder_names(ids) -> dict[str, str]:
     """שמות של כמה תיקיות בבקשת batch אחת (במקום קריאה לכל תיקייה). {id: name}.
 
     תיקייה שהחשבון לא רואה (למשל תיקיית אב של תיקייה ששותפה איתו) פשוט לא מופיעה
-    בתוצאה: זה מצב צפוי ולא תקלה, ולכן כשל של פריט בודד לא נזרק. כשל של ה-batch
-    כולו (רשת, הרשאה שפגה) כן נזרק.
-    מקור ל-API: googleapiclient/http.py, BatchHttpRequest.add ו-callback(request_id, response, exception).
+    בתוצאה: זה מצב צפוי ולא תקלה. דרייב מחזיר עליה 404 notFound ("the user doesn't
+    have read access to a file, or the file doesn't exist"). כל כשל אחר של פריט —
+    403 של מגבלת קצב, 429, 5xx — הוא תקלה ולא "תיקייה נסתרת", ולכן הוא נזרק כמו
+    כשל של ה-batch כולו, והמשתמש מקבל "נסו שוב" במקום תוצאות בלי שם האב.
+    מקור לקודים: https://developers.google.com/workspace/drive/api/guides/handle-errors
+    מקור ל-API: googleapiclient/http.py (2.201.0), BatchHttpRequest.execute: כל תשובה
+    עם status >= 300 מגיעה ל-callback(request_id, response, exception) כ-HttpError.
     """
     unique = [i for i in dict.fromkeys(ids) if is_valid_drive_id(i)]
     names: dict[str, str] = {}
-    failed = 0
+    hidden = 0
+    errors: list[HttpError] = []
 
     def on_response(request_id, response, exception):
-        nonlocal failed
-        if exception is None and isinstance(response, dict) and isinstance(response.get("name"), str):
-            names[request_id] = response["name"]
+        nonlocal hidden
+        if exception is None:
+            if isinstance(response, dict) and isinstance(response.get("name"), str):
+                names[request_id] = response["name"]
+            else:
+                logger.warning("Folder name lookup returned no name")
+        elif isinstance(exception, HttpError) and http_status(exception) == 404:
+            hidden += 1
         else:
-            failed += 1
+            errors.append(exception)
 
     svc = get_drive_service()
     for start in range(0, len(unique), FOLDER_NAMES_BATCH):
@@ -293,8 +303,10 @@ def drive_folder_names(ids) -> dict[str, str]:
         for folder_id in unique[start : start + FOLDER_NAMES_BATCH]:
             batch.add(svc.files().get(fileId=folder_id, fields="name", supportsAllDrives=True), request_id=folder_id)
         batch.execute()
-    if failed:
-        logger.info("Folder names: %d of %d not visible to the account", failed, len(unique))
+        if errors:
+            raise errors[0]  # הקורא רושם ללוג ומחזיר שגיאה; ראה picker_api._drive_failure
+    if hidden:
+        logger.info("Folder names: %d of %d not visible to the account", hidden, len(unique))
     return names
 
 

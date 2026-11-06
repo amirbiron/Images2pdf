@@ -92,6 +92,9 @@ try {
   assert(cells.every((c) => c.proxy.includes("נחסם")), "בלי חיבור לגוגל, הנתיב דרך השרת מסומן 'נחסם'");
   const summary = await page.textContent("#thumb-summary");
   assert(summary.startsWith("נכשל"), "הסיכום לא מדווח הצלחה כשחלק מהתמונות לא נטענו");
+  // תוויות הסטטוס (.badge) הן חלק מהשורה, ולא העיגול הממוקם של מספר הסדר בבורר.
+  const badges = await page.$$eval(".check .badge", (bs) => bs.map((b) => getComputedStyle(b).position));
+  assert(badges.length > 0 && badges.every((pos) => pos === "static"), `תוויות הסטטוס בדף הבדיקות במקומן (${badges.length}, ${[...new Set(badges)].join(",")})`);
 
   await page.waitForTimeout(500);
   const saved = JSON.parse(readFileSync(join(dataDir, "dev_checks_last.json"), "utf8"));

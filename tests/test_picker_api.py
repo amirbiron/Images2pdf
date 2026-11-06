@@ -57,6 +57,15 @@ def test_parent_that_the_account_cannot_see_is_simply_missing(logged_in, drive):
     assert status == 200 and data["results"][0]["parent"] is None
 
 
+@pytest.mark.parametrize("status, reason", [(429, "rateLimitExceeded"), (403, "userRateLimitExceeded"), (500, "backendError")])
+def test_parent_lookup_failure_is_an_error_not_a_hidden_parent(logged_in, drive, status, reason):
+    """רק 404 אומר "החשבון לא רואה את התיקייה". מגבלת קצב או תקלה אצל גוגל לא יוצגו
+    כתוצאות בלי שם האב, כי אז שני "חדרי אמבטיה" נראים זהים בלי שום סימן לתקלה."""
+    drive.get_errors[drive.ids["root"]] = (status, reason)
+    resp = logged_in.get(f"{BASE_URL}/api/drive/search?q=וילה")
+    assert resp.status_code in (403, 502) and resp.get_json()["error"] in ("forbidden", "drive_error")
+
+
 def test_search_is_naturally_ordered_and_escaped(logged_in, drive):
     status, _ = _get(logged_in, "/api/drive/search?q=a'b\\c")
     assert status == 200
