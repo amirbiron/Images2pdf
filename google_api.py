@@ -25,7 +25,7 @@ from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload, MediaIoBaseUpload
 
 from config import DRIVE_SCOPES, GOOGLE_TOKEN_URL, is_valid_drive_id
 from token_store import StoredGrant, TokenStore, TokenUnreadable
@@ -356,15 +356,25 @@ class DownloadTooLarge(Exception):
     """הקובץ גדול מ-MAX_DOWNLOAD_BYTES."""
 
 
-def drive_download_to_file(file_id: str, dest: "os.PathLike[str] | str") -> int:
+class WrongFileType(Exception):
+    """סוג הקובץ בדרייב אינו מהסוגים שהתבקשו (למשל סרטון במקום תמונה)."""
+
+
+def drive_download_to_file(
+    file_id: str, dest: "os.PathLike[str] | str", *, require_mimes: tuple[str, ...] | None = None
+) -> int:
     """מוריד קובץ מדרייב לקובץ בדיסק (ולא לזיכרון). מחזיר את מספר הבתים.
 
     מחליף את `drive_download_bytes` של הפאנל המקורי, שטען את כל הקובץ ל-BytesIO.
-    זורק DownloadTooLarge, HttpError או OSError; בכל כשל הקובץ החלקי נמחק.
+    עם `require_mimes`, קובץ מסוג אחר נדחה לפני ההורדה (WrongFileType): המזהים מגיעים
+    מהדפדפן, ובלי הבדיקה אפשר היה לבקש הורדה של סרטון בגודל 150MB.
+    זורק DownloadTooLarge, WrongFileType, HttpError או OSError; בכל כשל הקובץ החלקי נמחק.
     """
     if not is_valid_drive_id(file_id):
         raise ValueError("invalid file id")
-    meta = drive_get(file_id, "size")
+    meta = drive_get(file_id, "size, mimeType" if require_mimes else "size")
+    if require_mimes and meta.get("mimeType") not in require_mimes:
+        raise WrongFileType()
     size = meta.get("size")
     if isinstance(size, str) and size.isdigit() and int(size) > MAX_DOWNLOAD_BYTES:
         raise DownloadTooLarge(int(size))
@@ -383,6 +393,49 @@ def drive_download_to_file(file_id: str, dest: "os.PathLike[str] | str") -> int:
         dest_path.unlink(missing_ok=True)
         raise
     return written
+
+
+# ─── העלאה ────────────────────────────────────────────────────
+
+# העלאה שאפשר לחדש (resumable): התיעוד של דרייב מגביל העלאה בבקשה אחת (multipart)
+# לקבצים של עד 5MB, ו-PDF של 12 תמונות שקל בשלב 1 כמעט 5MB (5,052KB). מקור:
+# https://developers.google.com/workspace/drive/api/guides/manage-uploads
+# ("Resumable upload ... Use this upload type for large files (greater than 5 MB)").
+# החתיכה בכפולה של 256KB, כנדרש בהעלאה כזו; googleapiclient חוזר בעצמו על 5xx ו-429
+# בכל חתיכה (num_retries). מקור: googleapiclient/http.py, HttpRequest.next_chunk
+# ו-_should_retry_response (גרסה 2.201.0).
+UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024
+UPLOAD_RETRIES = 3
+
+
+def drive_upload_file(path: Path, name: str, mimetype: str, parent_id: str, on_chunk=None) -> dict:
+    """מעלה קובץ מהדיסק לתיקייה בדרייב, בחתיכות. `on_chunk()` נקרא אחרי כל חתיכה.
+
+    מחזיר את ה-metadata של הקובץ החדש (id, name, webViewLink). זורק HttpError או
+    שגיאת רשת; הקורא מחליט מה עושים עם כשל.
+    """
+    if not is_valid_drive_id(parent_id):
+        raise ValueError("invalid parent id")
+    media = MediaFileUpload(str(path), mimetype=mimetype, chunksize=UPLOAD_CHUNK_BYTES, resumable=True)
+    try:
+        request = (
+            get_drive_service()
+            .files()
+            .create(
+                body={"name": name, "parents": [parent_id]},
+                media_body=media,
+                fields="id, name, webViewLink",
+                supportsAllDrives=True,
+            )
+        )
+        response = None
+        while response is None:
+            _, response = request.next_chunk(num_retries=UPLOAD_RETRIES)
+            if on_chunk is not None:
+                on_chunk()
+    finally:
+        media.stream().close()  # MediaFileUpload פותח את הקובץ בבנאי ולא סוגר אותו
+    return response if isinstance(response, dict) else {}
 
 
 # ─── תמונות ממוזערות ──────────────────────────────────────────

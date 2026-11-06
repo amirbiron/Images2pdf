@@ -36,13 +36,62 @@
       <button id="clear-selection" type="button" class="link-button" hidden>ניקוי הבחירה</button>
     </div>
     <ol id="selection-strip" class="strip" aria-label="התמונות שנבחרו, לפי הסדר"></ol>
-    <div class="title-field">
-      <label for="title-input">כותרת ה-PDF</label>
-      <input id="title-input" type="text" maxlength="{{ title_max }}" dir="auto" autocomplete="off">
+    <div class="selection-actions">
+      <div class="title-field">
+        <label for="title-input">כותרת</label>
+        <input id="title-input" type="text" maxlength="{{ title_max }}" dir="auto" autocomplete="off">
+      </div>
+      <button id="create-pdf" type="button" class="button create" disabled>יצירת PDF</button>
     </div>
   </aside>
 
   <div id="toast" class="toast" role="alert" hidden></div>
+
+  <dialog id="viewer" class="viewer" aria-labelledby="viewer-name">
+    <div class="viewer-top">
+      <p id="viewer-count" class="viewer-count"></p>
+      <h2 id="viewer-name" class="viewer-name" dir="auto"></h2>
+      <button id="viewer-close" type="button" class="icon-button" aria-label="סגירה">✕</button>
+    </div>
+    <div class="viewer-stage">
+      <img id="viewer-low" class="viewer-low" alt="">
+      <img id="viewer-high" class="viewer-high" alt="">
+      <button id="viewer-prev" type="button" class="viewer-nav viewer-prev" aria-label="התמונה הקודמת"></button>
+      <button id="viewer-next" type="button" class="viewer-nav viewer-next" aria-label="התמונה הבאה"></button>
+    </div>
+    <div class="viewer-bottom">
+      <p id="viewer-status" class="viewer-status" role="status"></p>
+      <button id="viewer-select" type="button" class="button"></button>
+    </div>
+  </dialog>
+
+  <dialog id="job" class="job" aria-labelledby="job-heading">
+    <h2 id="job-heading" class="job-heading"></h2>
+    <div id="job-running" class="job-running" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="job-lead">מכין את הקובץ, זה יכול לקחת עד דקה.</p>
+      <p id="job-progress" class="job-progress" role="status"></p>
+      <p class="muted job-note">אפשר לנעול את המסך או לעבור לאפליקציה אחרת. הקובץ ימשיך להיווצר ויחכה כאן.</p>
+    </div>
+    <div id="job-result" class="job-result" hidden>
+      <p id="job-filename" class="job-filename"></p>
+      <div class="job-buttons">
+        <button id="job-share" type="button" class="button" hidden>שיתוף</button>
+        <a id="job-download" class="button" href="#" download>הורדה</a>
+        <a id="job-drive" class="button button-secondary" href="#" target="_blank" rel="noopener noreferrer" hidden>פתיחה בדרייב</a>
+      </div>
+    </div>
+    <p id="job-message" class="job-message" role="alert" hidden></p>
+    <div id="job-failed" class="job-failed" hidden>
+      <p>תמונות שלא נכנסו לקובץ:</p>
+      <ul id="job-failed-list"></ul>
+    </div>
+    <div class="job-footer">
+      <button id="job-retry" type="button" class="button" hidden>ניסיון נוסף</button>
+      <button id="job-new" type="button" class="button button-secondary" hidden>בחירה חדשה</button>
+      <button id="job-close" type="button" class="button button-secondary" hidden>סגירה</button>
+    </div>
+  </dialog>
 </div>
 {% endblock %}
 {% block scripts %}

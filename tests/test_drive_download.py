@@ -100,3 +100,31 @@ def test_partial_file_is_removed_when_retries_run_out(tmp_path, service):
 def test_invalid_id_is_refused(tmp_path):
     with pytest.raises(ValueError):
         drive_download_to_file("x' or 1=1", tmp_path / "out.bin")
+
+
+class _MetaHttp(RecordingHttp):
+    def __init__(self, data, mime):
+        super().__init__(data)
+        self.mime = mime
+        self.fields = []
+
+    def request(self, uri, method="GET", body=None, headers=None, redirections=5, connection_type=None):
+        if "alt=media" not in uri:
+            self.fields.append(uri)
+            return httplib2.Response({"status": 200}), json.dumps({"size": str(len(self.data)), "mimeType": self.mime}).encode()
+        return super().request(uri, method, body, headers, redirections, connection_type)
+
+
+def test_wrong_file_type_is_refused_before_downloading(tmp_path, service):
+    http = _MetaHttp(DATA, "video/mp4")
+    service(http)
+    with pytest.raises(google_api.WrongFileType):
+        drive_download_to_file("abc123", tmp_path / "out.bin", require_mimes=google_api.IMAGE_MIMES)
+    assert http.ranges == [] and not (tmp_path / "out.bin").exists()
+    assert "mimeType" in http.fields[0]
+
+
+def test_allowed_file_type_downloads(tmp_path, service):
+    http = _MetaHttp(DATA, "image/jpeg")
+    service(http)
+    assert drive_download_to_file("abc123", tmp_path / "out.bin", require_mimes=google_api.IMAGE_MIMES) == len(DATA)

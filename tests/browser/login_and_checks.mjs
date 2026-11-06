@@ -95,6 +95,18 @@ try {
   // תוויות הסטטוס (.badge) הן חלק מהשורה, ולא העיגול הממוקם של מספר הסדר בבורר.
   const badges = await page.$$eval(".check .badge", (bs) => bs.map((b) => getComputedStyle(b).position));
   assert(badges.length > 0 && badges.every((pos) => pos === "static"), `תוויות הסטטוס בדף הבדיקות במקומן (${badges.length}, ${[...new Set(badges)].join(",")})`);
+  // כפתור שנעול בזמן שליחה (form_wait.js) מציג סמן "המתנה". כלל disabled של כפתור אחר לא דורס את זה.
+  // (כפתור .button נעול על הדף האמיתי, עם ה-style.css של השרת; טופס ההרצה עצמו מוצג רק כשיש חיבור לגוגל.)
+  const lockedCursor = await page.evaluate(() => {
+    const b = document.createElement("button");
+    b.className = "button";
+    b.disabled = true;
+    document.body.appendChild(b);
+    const c = getComputedStyle(b).cursor;
+    b.remove();
+    return c;
+  });
+  assert(lockedCursor === "wait", `כפתור שליחה נעול מציג סמן "המתנה" (${lockedCursor})`);
 
   await page.waitForTimeout(500);
   const saved = JSON.parse(readFileSync(join(dataDir, "dev_checks_last.json"), "utf8"));

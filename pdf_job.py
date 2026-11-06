@@ -11,8 +11,11 @@ pdf_job.py — יצירת PDF מקצה לקצה: הבאת כל תמונה, עי�
 
 from __future__ import annotations
 
+import fcntl
 import logging
+import os
 import shutil
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +29,67 @@ from pdf_layout import DocumentLayout, layout_document
 logger = logging.getLogger(__name__)
 
 MAX_IMAGES = 12
+
+_thread_locks: dict[Path, threading.Lock] = {}
+_thread_locks_guard = threading.Lock()
+
+
+class GenerationLock:
+    """יצירת PDF אחת בכל רגע, בכל התהליכים וה-threads (ROADMAP: "נעילה פשוטה מאפשרת
+    יצירה של קובץ אחד בלבד בכל פעם"). גם הבורר וגם /dev/sample-pdf עוברים כאן.
+
+    flock על קובץ בדיסק: gunicorn מחליף worker אחרי max_requests, ולרגע רצים שני
+    תהליכים. הנעילה לא מחכה — מי שלא קיבל אותה מקבל תשובה מיד — ומשתחררת לבד כשהתהליך
+    שמחזיק אותה מת (מערכת ההפעלה סוגרת את ה-fd). נמדד ב-Linux: fd שני על אותו קובץ,
+    גם באותו תהליך, מקבל EAGAIN. מנעול ה-thread שומר על אותה התנהגות גם במערכות שבהן
+    flock באותו תהליך לא חוסם (ראו storage.file_lock).
+    """
+
+    def __init__(self, data_dir: Path) -> None:
+        self._path = data_dir / "generate.lock"
+        with _thread_locks_guard:
+            self._tlock = _thread_locks.setdefault(self._path, threading.Lock())
+        self._fd: int | None = None
+
+    def try_acquire(self) -> bool:
+        if self._fd is not None:
+            raise RuntimeError("already held")
+        if not self._tlock.acquire(blocking=False):
+            return False
+        try:
+            fd = os.open(self._path, os.O_RDWR | os.O_CREAT, 0o600)
+        except BaseException:
+            self._tlock.release()
+            raise
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(fd)
+            self._tlock.release()
+            return False
+        except BaseException:
+            os.close(fd)
+            self._tlock.release()
+            raise
+        self._fd = fd
+        return True
+
+    def release(self) -> None:
+        if self._fd is None:
+            return
+        fd, self._fd = self._fd, None
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+            self._tlock.release()
+
+    def is_free(self) -> bool:
+        """האם אף אחד לא מייצר עכשיו. בודק ומשחרר מיד."""
+        if not self.try_acquire():
+            return False
+        self.release()
+        return True
 
 
 @dataclass(frozen=True)
@@ -66,10 +130,12 @@ def run_pdf_job(
     link_url: str | None,
     out_path: Path,
     work_dir: Path,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> JobResult:
     """`fetch(item, dest)` מוריד את המקור ל-dest ומחזיר את מספר הבתים, או זורק FetchError.
 
     ה-PDF נכתב קודם לקובץ זמני בתוך work_dir, ומועבר ל-out_path רק אם הכתיבה הצליחה.
+    `on_progress(done, total)` נקרא אחרי כל תמונה, גם כשהיא נכשלה.
     """
     if not 1 <= len(items) <= MAX_IMAGES:
         raise ValueError(f"between 1 and {MAX_IMAGES} images are required")
@@ -88,6 +154,8 @@ def run_pdf_job(
                     result.source_bytes += fetch(item, src)
                 except FetchError as exc:
                     result.failed.append((item.name, exc.reason))
+                    if on_progress is not None:
+                        on_progress(i + 1, len(items))
                     continue
                 finally:
                     result.seconds_fetch += time.monotonic() - t0
@@ -100,6 +168,8 @@ def run_pdf_job(
                     src.unlink(missing_ok=True)
                     release_memory()
                     result.seconds_process += time.monotonic() - t1
+                if on_progress is not None:
+                    on_progress(i + 1, len(items))
 
             result.processed = len(processed)
             if processed:

@@ -15,10 +15,11 @@ request." מקור: https://developers.google.com/workspace/drive/api/reference/
 from __future__ import annotations
 
 import logging
+import re
 
 import google.auth.transport.requests as google_requests
 import requests
-from flask import Blueprint, Response
+from flask import Blueprint, Response, request
 from googleapiclient.errors import HttpError
 
 from config import is_valid_drive_id
@@ -29,11 +30,24 @@ logger = logging.getLogger(__name__)
 bp = Blueprint("thumbnails", __name__)
 
 MAX_THUMB_BYTES = 5 * 1024 * 1024
+# התצוגה המוגדלת בבורר. הקישור של גוגל מסתיים ב-`=s220`, והפאנל המקורי החליף אותו
+# בגודל גדול יותר לתצוגה המוגדלת (docs/drive-picker-extract.md, סעיף 6, api_drive_thumbnail:
+# "Replace with a larger size when requested for the lightbox"). התיעוד של Drive לא מתאר
+# את הסיומת הזו, ולכן קישור שלא מסתיים בה נשאר כמו שהוא.
+LARGE_SIZE = 1600
+_SIZE_SUFFIX = re.compile(r"=s\d+$")
+
+
+def sized_link(link: str, size: int) -> str:
+    return _SIZE_SUFFIX.sub(f"=s{size}", link) if _SIZE_SUFFIX.search(link) else link
 
 
 @bp.get("/api/drive/thumbnail/<file_id>")
 def thumbnail(file_id: str):
     if not is_valid_drive_id(file_id):
+        return Response(status=400)
+    size = request.args.get("size")
+    if size not in (None, "large"):
         return Response(status=400)
     try:
         meta = drive_get(file_id, "thumbnailLink")
@@ -45,6 +59,8 @@ def thumbnail(file_id: str):
     link = meta.get("thumbnailLink")
     if link is None:
         return Response(status=404)
+    if size == "large" and isinstance(link, str):
+        link = sized_link(link, LARGE_SIZE)
     if not is_allowed_thumbnail_url(link):
         logger.warning("thumbnailLink host not allowed for credentialed fetch: %s", thumbnail_url_host(link))
         return Response(status=502)

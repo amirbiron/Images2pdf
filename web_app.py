@@ -16,6 +16,7 @@ from google.auth.exceptions import RefreshError
 import auth
 import dev_checks
 import oauth
+import pdf_jobs
 import picker_api
 import sample_pdf
 import thumbnails
@@ -93,6 +94,7 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(thumbnails.bp)
     app.register_blueprint(sample_pdf.bp)
     app.register_blueprint(picker_api.bp)
+    app.register_blueprint(pdf_jobs.bp)
 
     app.add_url_rule("/healthz", "healthz", healthz)
     app.add_url_rule("/", "index", index)

@@ -9,6 +9,11 @@
 // היא נשמרת גם ב-sessionStorage, כדי שרענון הדף לא ימחק אותה.
 //
 // כל טקסט שמגיע מדרייב (שמות תיקיות וקבצים) נכנס לדף עם textContent בלבד.
+//
+// שלב 3: כפתור הגדלה על כל תמונה (בלי לבחור אותה), ויצירת PDF. ליצירה יש מזהה שהדפדפן
+// יוצר ושומר ב-sessionStorage לפני השליחה. אם החיבור נופל באמצע (מסך נעול, מעבר
+// לאפליקציה אחרת), השרת ממשיך, והדפדפן שואל על המצב לפי אותו מזהה כשהוא חוזר — ולא
+// שולח יצירה חדשה. ראו pdf_jobs.py.
 (function () {
   "use strict";
 
@@ -40,13 +45,47 @@
     clearSelection: $("clear-selection"),
     strip: $("selection-strip"),
     title: $("title-input"),
-    toast: $("toast")
+    create: $("create-pdf"),
+    toast: $("toast"),
+    viewer: $("viewer"),
+    viewerCount: $("viewer-count"),
+    viewerName: $("viewer-name"),
+    viewerClose: $("viewer-close"),
+    viewerLow: $("viewer-low"),
+    viewerHigh: $("viewer-high"),
+    viewerPrev: $("viewer-prev"),
+    viewerNext: $("viewer-next"),
+    viewerStatus: $("viewer-status"),
+    viewerSelect: $("viewer-select"),
+    job: $("job"),
+    jobHeading: $("job-heading"),
+    jobRunning: $("job-running"),
+    jobProgress: $("job-progress"),
+    jobResult: $("job-result"),
+    jobFilename: $("job-filename"),
+    jobShare: $("job-share"),
+    jobDownload: $("job-download"),
+    jobDrive: $("job-drive"),
+    jobMessage: $("job-message"),
+    jobFailed: $("job-failed"),
+    jobFailedList: $("job-failed-list"),
+    jobRetry: $("job-retry"),
+    jobNew: $("job-new"),
+    jobClose: $("job-close")
   };
 
   // ─── מצב ────────────────────────────────────────────────────
 
+  var JOB_ID_RE = /^[0-9a-f]{32}$/;
+
   function emptyState() {
-    return { location: null, selection: [], title: "", titleEdited: false, names: {} };
+    return { location: null, selection: [], title: "", titleEdited: false, names: {}, job: null };
+  }
+
+  // היצירה האחרונה: המזהה, והבקשה עצמה — כדי לשלוח אותה שוב עם אותו מזהה אם היא לא הגיעה לשרת.
+  function validJob(j) {
+    return j === null || j === undefined ||
+      (typeof j === "object" && JOB_ID_RE.test(j.id) && j.payload && typeof j.payload === "object");
   }
 
   function isItem(s) {
@@ -59,6 +98,7 @@
     if (s.location !== null && !(s.location && ID_RE.test(s.location.id) && typeof s.location.name === "string")) { return false; }
     if (!Array.isArray(s.selection) || s.selection.length > MAX || !s.selection.every(isItem)) { return false; }
     if (typeof s.title !== "string" || typeof s.titleEdited !== "boolean") { return false; }
+    if (!validJob(s.job)) { return false; }
     return s.names && typeof s.names === "object";
   }
 
@@ -198,6 +238,7 @@
   }
 
   function route() {
+    closeViewer();
     var r = parseHash();
     if (r.screen === "location") {
       if (!confirmSwitch(r.path[0])) {
@@ -327,7 +368,7 @@
 
   // ─── מסך הלוקיישן ──────────────────────────────────────────
 
-  var listing = { seq: 0, abort: null, path: [] };
+  var listing = { seq: 0, abort: null, path: [], images: [] };
 
   function cancelListing() {
     listing.seq++;
@@ -411,6 +452,7 @@
     listing.abort = new AbortController();
     var signal = listing.abort.signal;
     el.grid.textContent = "";
+    listing.images = [];
     setStatus(el.locationStatus, "טוען…");
     var counts = { folders: 0, images: 0 };
 
@@ -426,7 +468,8 @@
         });
         (Array.isArray(data.images) ? data.images : []).forEach(function (img) {
           if (img && ID_RE.test(img.id) && typeof img.name === "string") {
-            el.grid.appendChild(imageTile(img));
+            el.grid.appendChild(imageTile(img, listing.images.length));
+            listing.images.push(img);
             counts.images++;
           }
         });
@@ -473,14 +516,25 @@
     return button;
   }
 
-  function thumbImage(id, link) {
+  // הקישור של גוגל מסתיים ב-"=s220" (220 פיקסלים בצד הארוך). הפאנל המקורי החליף את
+  // הסיומת בגודל אחר לתצוגה המוגדלת (docs/drive-picker-extract.md, סעיף 6). זה לא מתועד
+  // אצל גוגל, ולכן קישור בלי הסיומת נשאר כמו שהוא, ותמונה שלא נטענת עוברת לנתיב שדרך השרת.
+  var GRID_THUMB_PX = 480;   // משבצת ברוחב כ-180 פיקסלים, במסך טלפון חד (פי 2 עד 3)
+  var LARGE_THUMB_PX = 1600;
+
+  function sizedLink(link, px) {
+    if (typeof link !== "string" || link.indexOf("https://") !== 0) { return null; }
+    return /=s\d+$/.test(link) ? link.replace(/=s\d+$/, "=s" + px) : link;
+  }
+
+  function thumbImage(id, link, px) {
     // קודם הקישור הישיר של גוגל; אם התמונה לא נטענת — הנתיב שדרך השרת, רק לתמונה הזו.
     var img = document.createElement("img");
     var proxy = "/api/drive/thumbnail/" + id;
     img.alt = "";
     img.loading = "lazy";
     img.decoding = "async";
-    img.src = typeof link === "string" && link.indexOf("https://") === 0 ? link : proxy;
+    img.src = sizedLink(link, px || GRID_THUMB_PX) || proxy;
     img.addEventListener("error", function onError() {
       if (img.getAttribute("src") !== proxy) {
         img.src = proxy;
@@ -499,12 +553,16 @@
     return name.replace(/\.(jpe?g|png)$/i, "") || name;
   }
 
-  function imageTile(item) {
+  // משבצת תמונה: כפתור בחירה (התמונה עצמה) וכפתור הגדלה נפרד בפינה. שני כפתורים אחים
+  // ולא אחד בתוך השני, כי כפתור בתוך כפתור אינו HTML תקין.
+  function imageTile(item, index) {
+    var tile = document.createElement("div");
+    tile.className = "tile tile-image";
+    tile.setAttribute("data-id", item.id);
+    tile.setAttribute("data-name", item.name);
     var button = document.createElement("button");
     button.type = "button";
-    button.className = "tile tile-image";
-    button.setAttribute("data-id", item.id);
-    button.setAttribute("data-name", item.name);
+    button.className = "tile-select";
     button.appendChild(thumbImage(item.id, item.thumbnailLink));
     var name = document.createElement("span");
     name.className = "tile-name";
@@ -516,8 +574,33 @@
     badge.setAttribute("aria-hidden", "true");
     button.appendChild(badge);
     button.addEventListener("click", function () { toggle(item); });
-    syncTile(button);
-    return button;
+    var zoom = document.createElement("button");
+    zoom.type = "button";
+    zoom.className = "tile-zoom";
+    zoom.setAttribute("aria-label", "הגדלה: " + displayName(item.name));
+    zoom.appendChild(zoomIcon());
+    zoom.addEventListener("click", function () { openViewer(index); });
+    tile.appendChild(button);
+    tile.appendChild(zoom);
+    syncTile(tile);
+    return tile;
+  }
+
+  function zoomIcon() {
+    // זכוכית מגדלת עם פלוס. SVG שנבנה ב-DOM, בלי innerHTML ובלי סגנון inline (CSP).
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    [["circle", { cx: "10.5", cy: "10.5", r: "6.5" }], ["line", { x1: "15.5", y1: "15.5", x2: "21", y2: "21" }],
+     ["line", { x1: "10.5", y1: "7.5", x2: "10.5", y2: "13.5" }], ["line", { x1: "7.5", y1: "10.5", x2: "13.5", y2: "10.5" }]]
+      .forEach(function (spec) {
+        var node = document.createElementNS(ns, spec[0]);
+        Object.keys(spec[1]).forEach(function (k) { node.setAttribute(k, spec[1][k]); });
+        svg.appendChild(node);
+      });
+    return svg;
   }
 
   function indexInSelection(id) {
@@ -527,12 +610,12 @@
     return -1;
   }
 
-  function syncTile(button) {
-    var i = indexInSelection(button.getAttribute("data-id"));
-    var name = button.getAttribute("data-name");
-    button.classList.toggle("selected", i >= 0);
+  function syncTile(tile) {
+    var i = indexInSelection(tile.getAttribute("data-id"));
+    var button = tile.querySelector(".tile-select");
+    tile.classList.toggle("selected", i >= 0);
     button.setAttribute("aria-pressed", i >= 0 ? "true" : "false");
-    var label = displayName(name);
+    var label = displayName(tile.getAttribute("data-name"));
     button.setAttribute("aria-label", i >= 0 ? label + ", נבחרה מספר " + (i + 1) : label);
     button.querySelector(".order-badge").textContent = i >= 0 ? String(i + 1) : "";
   }
@@ -541,14 +624,17 @@
     Array.prototype.forEach.call(el.grid.querySelectorAll(".tile-image"), syncTile);
   }
 
-  function toggle(item) {
+  var LIMIT_TEXT = "אפשר לבחור עד " + MAX + " תמונות. כדי להוסיף, מסירים קודם תמונה אחרת.";
+
+  // מחזיר false כשהבחירה מלאה (ההודעה מוצגת אצל הקורא: בגריד או בתצוגה המוגדלת).
+  function toggle(item, quiet) {
     var i = indexInSelection(item.id);
     if (i >= 0) {
       state.selection.splice(i, 1);
     } else {
       if (state.selection.length >= MAX) {
-        toast("אפשר לבחור עד " + MAX + " תמונות. כדי להוסיף, מסירים קודם תמונה אחרת.");
-        return;
+        if (!quiet) { toast(LIMIT_TEXT); }
+        return false;
       }
       state.selection.push({
         id: item.id,
@@ -560,6 +646,7 @@
     saveState();
     syncTiles();
     renderSelection();
+    return true;
   }
 
   // ─── הבחירה והכותרת ────────────────────────────────────────
@@ -592,6 +679,17 @@
       el.strip.appendChild(li);
     });
     if (document.activeElement !== el.title) { el.title.value = state.title; }
+    updateCreateButton();
+  }
+
+  // הכותרת שתישלח: מה שבשדה, ואם הוא ריק — שם הלוקיישן (ROADMAP: הכותרת היא שם התיקייה).
+  function effectiveTitle() {
+    var typed = el.title.value.trim();
+    return typed || (state.location && state.location.name) || "";
+  }
+
+  function updateCreateButton() {
+    el.create.disabled = state.selection.length === 0 || !effectiveTitle() || jobBusy();
   }
 
   el.clearSelection.addEventListener("click", function () {
@@ -607,10 +705,401 @@
     state.title = el.title.value;
     state.titleEdited = true;
     saveState();
+    updateCreateButton();
   });
+
+  // ─── תצוגה מוגדלת ──────────────────────────────────────────
+  // נפתחת מכפתור ההגדלה בלי לבחור את התמונה, כי בתיקיות יש צילומים דומים מאוד.
+  // אפשר לדפדף בין התמונות של התיקייה ולבחור מתוכה.
+
+  var viewer = { index: -1 };
+
+  function openViewer(index) {
+    if (index < 0 || index >= listing.images.length) { return; }
+    viewer.index = index;
+    renderViewer();
+    if (!el.viewer.open) { el.viewer.showModal(); }
+  }
+
+  function closeViewer() {
+    if (el.viewer.open) { el.viewer.close(); }
+  }
+
+  function renderViewer() {
+    var item = listing.images[viewer.index];
+    if (!item) { return; }
+    el.viewerCount.textContent = (viewer.index + 1) + " מתוך " + listing.images.length;
+    el.viewerName.textContent = displayName(item.name);
+    el.viewerStatus.textContent = "";
+    // קודם התמונה הקטנה שכבר נטענה בגריד, ומעליה הגדולה כשהיא מגיעה. כל אחת מוצגת רק
+    // אחרי שנטענה (בלי אייקון של תמונה שבורה), ובכשל עוברת לנתיב שדרך השרת.
+    var proxy = "/api/drive/thumbnail/" + item.id;
+    var token = {};
+    viewer.token = token;
+    loadViewerImage(el.viewerLow, sizedLink(item.thumbnailLink, GRID_THUMB_PX), proxy, token);
+    loadViewerImage(el.viewerHigh, sizedLink(item.thumbnailLink, LARGE_THUMB_PX), proxy + "?size=large", token);
+    el.viewerPrev.disabled = viewer.index === 0;
+    el.viewerNext.disabled = viewer.index === listing.images.length - 1;
+    syncViewerSelect();
+  }
+
+  function loadViewerImage(img, direct, fallback, token) {
+    img.classList.remove("loaded");
+    img.onload = function () { if (viewer.token === token) { img.classList.add("loaded"); } };
+    img.onerror = function () {
+      if (viewer.token === token && img.getAttribute("src") !== fallback) { img.src = fallback; }
+    };
+    img.src = direct || fallback;
+  }
+
+  function syncViewerSelect() {
+    var item = listing.images[viewer.index];
+    if (!item) { return; }
+    var i = indexInSelection(item.id);
+    el.viewerSelect.textContent = i >= 0 ? "נבחרה (" + (i + 1) + ") · הסרה" : "בחירה";
+    el.viewerSelect.classList.toggle("button-secondary", i >= 0);
+    el.viewerSelect.setAttribute("aria-pressed", i >= 0 ? "true" : "false");
+  }
+
+  function stepViewer(delta) {
+    var next = viewer.index + delta;
+    if (next >= 0 && next < listing.images.length) {
+      viewer.index = next;
+      renderViewer();
+    }
+  }
+
+  el.viewerClose.addEventListener("click", closeViewer);
+  el.viewerPrev.addEventListener("click", function () { stepViewer(-1); });
+  el.viewerNext.addEventListener("click", function () { stepViewer(1); });
+  el.viewerSelect.addEventListener("click", function () {
+    var item = listing.images[viewer.index];
+    if (item && toggle(item, true) === false) {
+      el.viewerStatus.textContent = LIMIT_TEXT; // ה-toast מתחת לחלון, ולכן ההודעה כאן
+      return;
+    }
+    syncViewerSelect();
+  });
+  el.viewer.addEventListener("keydown", function (event) {
+    // בעברית "הבאה" משמאל: חץ שמאלה מתקדם, חץ ימינה חוזר.
+    if (event.key === "ArrowLeft") { stepViewer(1); event.preventDefault(); }
+    if (event.key === "ArrowRight") { stepViewer(-1); event.preventDefault(); }
+  });
+  el.viewer.addEventListener("click", function (event) {
+    if (event.target === el.viewer) { closeViewer(); } // לחיצה על הרקע
+  });
+
+  // ─── יצירת PDF ─────────────────────────────────────────────
+
+  var JOB_POLL_MS = 2000;
+  var JOB_POLL_MAX_MS = 8000;
+  // שני ערוצים בלתי תלויים: בקשת היצירה (POST), ושאלות על המצב (GET) כל שתי שניות.
+  // השאלות מציגות התקדמות, וממשיכות גם כשה-POST "תקוע" אחרי נעילת מסך — כך התוצאה
+  // מגיעה גם אם התשובה ל-POST לא תגיע לעולם.
+  var job = { timer: null, posting: false, polling: false, failures: 0, lastError: null, file: null };
+
+  function jobBusy() { return !!(state.job && state.job.status !== "done" && state.job.status !== "failed"); }
+
+  function newJobId() {
+    var bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    return Array.prototype.map.call(bytes, function (b) { return (b < 16 ? "0" : "") + b.toString(16); }).join("");
+  }
+
+  function startJob() {
+    if (jobBusy() || state.selection.length === 0 || !effectiveTitle()) { return; }
+    var payload = {
+      id: newJobId(),
+      location_id: state.location.id,
+      title: effectiveTitle(),
+      images: state.selection.map(function (item) { return { id: item.id, name: item.name }; })
+    };
+    // נשמר לפני השליחה: אם הדף נטען מחדש באמצע, ממשיכים עם אותו מזהה ולא יוצרים קובץ שני.
+    state.job = { id: payload.id, payload: payload, status: "sending" };
+    saveState();
+    job.file = null;
+    job.lastError = null;
+    job.failures = 0;
+    showJobRunning(null);
+    sendJob();
+    schedulePoll(false);
+  }
+
+  function sendJob() {
+    if (!jobBusy() || job.posting) { return; }
+    var id = state.job.id;
+    job.posting = true;
+    fetch("/api/pdf/jobs", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify(state.job.payload)
+    }).then(function (resp) {
+      return resp.json().catch(function () { return {}; }).then(function (body) {
+        job.posting = false;
+        if (!state.job || state.job.id !== id) { return; }
+        if (resp.status === 200 || resp.status === 202) { renderJob(body); return; }
+        var code = body && typeof body.error === "string" ? body.error : "http_" + resp.status;
+        if (code === "unauthorized") { goToLogin(); return; }
+        if (resp.status === 401 || resp.status >= 500) {
+          // התשובה היא רק רמז; מקור האמת הוא מצב העבודה בשרת (למשל: הקובץ נוצר, ורק
+          // השמירה בדרייב נכשלה כי ההרשאה בוטלה — ההורדה עדיין זמינה).
+          job.lastError = code;
+          pollJob();
+          return;
+        }
+        endJob({ id: id, status: "failed", error: code });
+      });
+    }).catch(function () {
+      job.posting = false;
+      // החיבור נפל (מסך נעול, רשת). השרת ממשיך; השאלות על המצב לפי המזהה ממשיכות.
+      schedulePoll(true);
+    });
+  }
+
+  function schedulePoll(afterFailure) {
+    clearTimeout(job.timer);
+    if (!jobBusy()) { return; }
+    if (afterFailure) { job.failures++; }
+    var wait = job.failures ? Math.min(JOB_POLL_MS * Math.pow(2, job.failures - 1), JOB_POLL_MAX_MS) : JOB_POLL_MS;
+    job.timer = setTimeout(pollJob, wait);
+  }
+
+  function pollJob() {
+    clearTimeout(job.timer);
+    if (!state.job || job.polling) { return; }
+    var id = state.job.id;
+    job.polling = true;
+    fetch("/api/pdf/jobs/" + id, { credentials: "same-origin", headers: { "Accept": "application/json" } })
+      .then(function (resp) {
+        return resp.json().catch(function () { return {}; }).then(function (body) {
+          job.polling = false;
+          if (!state.job || state.job.id !== id) { return; }
+          job.failures = 0;
+          if (resp.status === 200 || resp.status === 202) { renderJob(body); return; }
+          var code = body && typeof body.error === "string" ? body.error : "http_" + resp.status;
+          if (code === "unauthorized") { goToLogin(); return; }
+          if (resp.status === 404) {
+            if (!jobBusy()) { finishJob(); return; }       // קובץ ישן שכבר נמחק בשרת (אחרי 24 שעות)
+            if (job.lastError) { endJob({ id: id, status: "failed", error: job.lastError }); return; }
+            if (!job.posting) { sendJob(); }               // הבקשה לא הגיעה לשרת: שולחים שוב, באותו מזהה
+            schedulePoll(false);
+            return;
+          }
+          endJob({ id: id, status: "failed", error: code });
+        });
+      })
+      .catch(function () {
+        job.polling = false;
+        if (jobBusy()) { setJobProgress("החיבור נותק. מנסה שוב…"); }
+        schedulePoll(true);
+      });
+  }
+
+  function renderJob(data) {
+    if (!data || typeof data !== "object" || !JOB_ID_RE.test(data.id) || !state.job || data.id !== state.job.id) { return; }
+    if (data.status === "running") {
+      if (!jobBusy()) { return; } // תשובה מאוחרת אחרי שהעבודה כבר הסתיימה
+      state.job.status = "running";
+      saveState();
+      showJobRunning(data);
+      schedulePoll(false);
+    } else if (data.status === "done" || data.status === "failed") {
+      endJob(data);
+    }
+  }
+
+  function setJobProgress(text) { el.jobProgress.textContent = text; }
+
+  function showJobRunning(data) {
+    el.jobHeading.textContent = "מכין את הקובץ";
+    el.jobRunning.hidden = false;
+    el.jobResult.hidden = true;
+    el.jobFailed.hidden = true;
+    el.jobMessage.hidden = true;
+    el.jobRetry.hidden = el.jobNew.hidden = el.jobClose.hidden = true;
+    // המשפט "מכין את הקובץ, זה יכול לקחת עד דקה" קבוע בחלון (ROADMAP, זרימת המשתמש 6);
+    // כאן רק שורת ההתקדמות שמתחתיו.
+    var text = "";
+    if (data && data.stage === "saving") {
+      text = "שומר את הקובץ בדרייב…";
+    } else if (data && data.progress && data.progress.total > 0) {
+      text = "מעבד תמונה " + Math.min(data.progress.done + 1, data.progress.total) + " מתוך " + data.progress.total + "…";
+    }
+    setJobProgress(text);
+    if (!el.job.open) { el.job.showModal(); }
+    updateCreateButton();
+  }
+
+  var JOB_ERRORS = {
+    no_images: "אף תמונה לא עובדה, ולכן לא נוצר קובץ.",
+    location_not_found: "תיקיית הלוקיישן לא נמצאה בדרייב. ייתכן שהיא נמחקה או הועברה.",
+    google_reconnect_required: "צריך לחבר מחדש את חשבון הגוגל.",
+    interrupted: "היצירה נקטעה באמצע, כנראה בגלל עדכון של השרת. אפשר לנסות שוב.",
+    busy: "קובץ אחר נוצר עכשיו. מחכים שיסתיים ומנסים שוב.",
+    title_not_drawable: "בכותרת אין אף תו שאפשר להציג בקובץ (למשל רק אמוג'י). משנים את הכותרת ומנסים שוב.",
+    bad_title: "הכותרת לא תקינה. משנים אותה ומנסים שוב."
+  };
+
+  function endJob(data) {
+    clearTimeout(job.timer);
+    if (state.job) { state.job.status = data.status; saveState(); }
+    el.jobRunning.hidden = true;
+    el.jobMessage.hidden = true;
+    var failed = Array.isArray(data.failed) ? data.failed : [];
+    el.jobFailedList.textContent = "";
+    failed.forEach(function (f) {
+      if (!f || typeof f.name !== "string") { return; }
+      var li = document.createElement("li");
+      li.textContent = displayName(f.name) + (typeof f.reason === "string" ? " — " + f.reason : "");
+      el.jobFailedList.appendChild(li);
+    });
+    el.jobFailed.hidden = el.jobFailedList.children.length === 0;
+
+    if (data.status === "done" && typeof data.file_url === "string" && data.file_url.indexOf("/api/pdf/jobs/") === 0) {
+      el.jobHeading.textContent = "הקובץ מוכן";
+      el.jobResult.hidden = false;
+      renderFilename(typeof data.filename === "string" ? data.filename : "");
+      el.jobDownload.href = data.file_url;
+      el.jobDownload.setAttribute("download", typeof data.filename === "string" ? data.filename : "");
+      var drive = typeof data.drive_url === "string" && data.drive_url.indexOf("https://drive.google.com/") === 0;
+      el.jobDrive.hidden = !drive;
+      if (drive) { el.jobDrive.href = data.drive_url; }
+      if (data.drive_error === "google_reconnect_required") {
+        showJobMessage("הקובץ לא נשמר בדרייב כי צריך לחבר מחדש את חשבון הגוגל. אפשר להוריד אותו.",
+          { href: "/settings", text: "לחיבור מחדש" });
+      } else if (data.drive_error) {
+        showJobMessage("הקובץ לא נשמר בדרייב, אבל אפשר להוריד אותו.");
+      } else if (!data.saved_to_drive) {
+        showJobMessage("הקובץ לא נשמר בדרייב, אבל אפשר להוריד אותו.");
+      }
+      prepareShare(data);
+      el.jobRetry.hidden = true;
+    } else {
+      el.jobHeading.textContent = "הקובץ לא נוצר";
+      el.jobResult.hidden = true;
+      var code = typeof data.error === "string" ? data.error : "";
+      if (code === "google_reconnect_required") {
+        showJobMessage(JOB_ERRORS[code], { href: "/settings", text: "לחיבור מחדש" });
+      } else {
+        showJobMessage(JOB_ERRORS[code] || "משהו השתבש ביצירת הקובץ. אפשר לנסות שוב.");
+      }
+      el.jobRetry.hidden = code === "google_reconnect_required" || code === "no_images";
+    }
+    el.jobNew.hidden = data.status !== "done";
+    el.jobClose.hidden = false;
+    if (!el.job.open) { el.job.showModal(); }
+    updateCreateButton();
+  }
+
+  // שם הקובץ הוא `<כותרת> <DD-MM-YYYY>.pdf`. בשורה בעברית, התאריך והסיומת מתהפכים
+  // ("pdf.06-11-2026") לפי האלגוריתם הדו-כיווני, ולכן הם מבודדים ב-bdi בכיוון שמאל-לימין.
+  function renderFilename(name) {
+    el.jobFilename.textContent = "";
+    var m = /^(.*) (\d\d-\d\d-\d{4}\.pdf)$/.exec(name);
+    if (!m) {
+      el.jobFilename.dir = "auto";
+      el.jobFilename.textContent = name;
+      return;
+    }
+    el.jobFilename.removeAttribute("dir");
+    var title = document.createElement("bdi");
+    title.textContent = m[1];
+    var tail = document.createElement("bdi");
+    tail.dir = "ltr";
+    tail.textContent = m[2];
+    el.jobFilename.appendChild(title);
+    el.jobFilename.appendChild(document.createTextNode(" "));
+    el.jobFilename.appendChild(tail);
+  }
+
+  function showJobMessage(text, link) {
+    setStatus(el.jobMessage, text, link);
+    el.jobMessage.hidden = false;
+  }
+
+  // שיתוף: navigator.share עם קבצים דורש לחיצה של המשתמש ("transient activation"), ולכן
+  // הקובץ נטען מראש, והלחיצה קוראת ל-share מיד. אם הדפדפן לא יכול לשתף את הקובץ
+  // (canShare מחזיר false או לא קיים) — רק הורדה. מקור:
+  // https://developer.mozilla.org/en-US/docs/Web/API/Navigator/share ו-.../Navigator/canShare
+  function prepareShare(data) {
+    el.jobShare.hidden = true;
+    job.file = null;
+    if (typeof navigator.canShare !== "function" || typeof navigator.share !== "function" || typeof File !== "function") { return; }
+    var id = data.id;
+    fetch(data.file_url, { credentials: "same-origin" })
+      .then(function (resp) { if (!resp.ok) { throw new Error("download failed"); } return resp.blob(); })
+      .then(function (blob) {
+        if (!state.job || state.job.id !== id) { return; }
+        var file = new File([blob], data.filename || "קובץ.pdf", { type: "application/pdf" });
+        if (navigator.canShare({ files: [file], title: data.title || "" })) {
+          job.file = { file: file, title: data.title || "" };
+          el.jobShare.hidden = false;
+        }
+      })
+      .catch(function () { /* בלי שיתוף: ההורדה עדיין מוצגת */ });
+  }
+
+  el.jobShare.addEventListener("click", function () {
+    if (!job.file) { return; }
+    navigator.share({ files: [job.file.file], title: job.file.title }).catch(function (err) {
+      if (err && err.name === "AbortError") { return; } // המשתמש סגר את חלון השיתוף
+      showJobMessage("השיתוף לא הצליח. אפשר להוריד את הקובץ ולשתף אותו מהטלפון.");
+    });
+  });
+
+  function finishJob() {
+    clearTimeout(job.timer);
+    state.job = null;
+    job.file = null;
+    saveState();
+    if (el.job.open) { el.job.close(); }
+    updateCreateButton();
+  }
+
+  el.create.addEventListener("click", startJob);
+  el.jobClose.addEventListener("click", finishJob);
+  el.jobRetry.addEventListener("click", function () {
+    state.job = null;
+    startJob();
+  });
+  el.jobNew.addEventListener("click", function () {
+    finishJob();
+    state.selection = [];
+    saveState();
+    syncTiles();
+    renderSelection();
+    go(searchHash(""));
+  });
+  el.job.addEventListener("cancel", function (event) {
+    // Escape בזמן היצירה לא סוגר את החלון: העבודה ממשיכה, והחלון הוא המקום שבו תופיע התוצאה.
+    if (jobBusy()) { event.preventDefault(); }
+  });
+  el.job.addEventListener("close", function () {
+    if (!jobBusy() && state.job) { finishJob(); }
+  });
+
+  // חזרה לדף אחרי נעילת מסך או מעבר לאפליקציה אחרת: שואלים מיד מה המצב.
+  function resumeJob() {
+    if (jobBusy()) { pollJob(); }
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") { resumeJob(); }
+  });
+  window.addEventListener("pageshow", resumeJob);
+  window.addEventListener("online", resumeJob);
+
+  function goToLogin() {
+    window.location.href = "/login?next=" + encodeURIComponent("/" + window.location.hash);
+  }
 
   // ─── התחלה ─────────────────────────────────────────────────
 
   window.addEventListener("hashchange", route);
   route();
+  // יצירה שהתחילה לפני שהדף נטען מחדש (למשל אחרי שהטלפון סגר את הלשונית ברקע)
+  if (state.job) {
+    if (jobBusy()) { showJobRunning(null); }
+    pollJob();
+  }
 })();

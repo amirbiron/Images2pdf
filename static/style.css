@@ -131,18 +131,32 @@ input[type="search"] {
 .crumb-current { font-weight: 600; }
 .crumb-sep { color: var(--muted); }
 
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+/* טלפון: שתי עמודות, כדי שתמונה לרוחב תהיה גדולה מספיק להבחנה בין צילומים דומים. */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+/* משבצת לרוחב (4:3, היחס של צילום מטלפון) ובלי חיתוך: התמונות כמעט תמיד לרוחב, ולכן הן
+   ממלאות אותה כמעט בלי פסים. תמונה לאורך מוצגת כולה, עם פסים בצדדים. */
 .tile {
-  position: relative; aspect-ratio: 1 / 1; padding: 0; overflow: hidden; cursor: pointer;
+  position: relative; aspect-ratio: 4 / 3; padding: 0; overflow: hidden; cursor: pointer;
   border: 3px solid transparent; border-radius: 10px; background: #ebe8e1; color: var(--text); font: inherit;
 }
-.tile:focus-visible { outline: 3px solid #9cc3e6; outline-offset: 2px; }
-.tile-image img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.tile:focus-visible, .tile-select:focus-visible { outline: 3px solid #9cc3e6; outline-offset: 2px; }
+.tile-select { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; background: none; cursor: pointer; font: inherit; color: inherit; }
+.tile-image img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .tile-image .tile-name { position: absolute; inset-inline: 0; bottom: 0; padding: 2px 6px; font-size: 0.72rem;
   background: rgba(255, 255, 255, 0.82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; }
-.tile-image:focus-visible .tile-name { opacity: 1; }
+.tile-select:focus-visible .tile-name { opacity: 1; }
 /* במגע, מצב hover נשאר על התמונה האחרונה שנלחצה; השם מוצג בריחוף רק כשיש עכבר. */
 @media (hover: hover) { .tile-image:hover .tile-name { opacity: 1; } }
+/* כפתור ההגדלה: בפינה שמול מספר הסדר. העיגול 34px, ואזור הלחיצה 44px (padding). */
+.tile-zoom {
+  position: absolute; top: 0; inset-inline-end: 0; width: 44px; height: 44px; padding: 5px; border: 0;
+  background: none; cursor: pointer; display: grid; place-items: center;
+}
+.tile-zoom svg {
+  width: 34px; height: 34px; padding: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); fill: none; stroke: #1f2328; stroke-width: 2.2; stroke-linecap: round;
+}
+.tile-zoom:focus-visible { outline: 3px solid #9cc3e6; outline-offset: -3px; border-radius: 999px; }
 .tile-image img.thumb-broken { visibility: hidden; }
 /* השם בא מיד אחרי התמונה ב-DOM (picker.js, imageTile), ולכן בורר אחים ולא :has(), שדפדפנים ישנים לא מכירים. */
 .tile-image img.thumb-broken + .tile-name { opacity: 1; inset: 0; display: flex; align-items: center; justify-content: center; white-space: normal; }
@@ -176,10 +190,78 @@ input[type="search"] {
 .strip-item { position: relative; width: 52px; height: 52px; padding: 0; border: 2px solid var(--accent); border-radius: 8px; overflow: hidden; background: #ebe8e1; cursor: pointer; }
 .strip-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .strip-item .order-badge { top: 2px; inset-inline-start: 2px; min-width: 20px; height: 20px; font-size: 0.75rem; padding: 0 4px; }
-.title-field { display: flex; align-items: center; gap: 8px; }
+/* כותרת וכפתור היצירה בשורה אחת, כדי שהפס התחתון בטלפון לא יגבה. */
+.selection-actions { display: flex; align-items: center; gap: 8px; }
+.title-field { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
 .title-field label { flex-shrink: 0; font-weight: 600; font-size: 0.92rem; }
-.title-field input { flex: 1; min-width: 0; font-size: 1rem; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
-.picker.on-location { padding-block-end: 190px; }
+.title-field input { flex: 1; min-width: 0; font-size: 1rem; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; min-height: 44px; }
+.button.create { flex-shrink: 0; white-space: nowrap; }
+/* רק כפתור היצירה: הכלל הכללי `.button:disabled` (סמן "המתנה") משמש את form_wait.js
+   בשליחת טפסים, ואסור לדרוס אותו. */
+.button.create:disabled { opacity: 0.5; cursor: not-allowed; }
+.picker.on-location { padding-block-end: 200px; }
+
+/* ─── תצוגה מוגדלת ─── */
+.viewer {
+  width: 100%; max-width: 100%; height: 100%; max-height: 100%; margin: 0; padding: 0; border: 0;
+  background: #111; color: #fff; display: none;
+}
+.viewer[open] { display: flex; flex-direction: column; }
+.viewer::backdrop { background: rgba(0, 0, 0, 0.85); }
+.viewer-top { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+.viewer-count { margin: 0; flex-shrink: 0; color: #c9c9c9; font-size: 0.9rem; }
+.viewer-name { margin: 0; flex: 1; min-width: 0; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.icon-button {
+  flex-shrink: 0; width: 44px; height: 44px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.14);
+  color: #fff; font-size: 1.2rem; cursor: pointer;
+}
+.viewer-stage { position: relative; flex: 1; min-height: 0; }
+.viewer-low, .viewer-high { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; visibility: hidden; }
+.viewer-low.loaded, .viewer-high.loaded { visibility: visible; }
+.viewer-nav {
+  position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 64px; border: 0;
+  background: rgba(0, 0, 0, 0.45); cursor: pointer; display: grid; place-items: center;
+}
+/* החץ מצויר ב-CSS ולא בתו: תווים כמו ‹ › מתהפכים בשורה בעברית. כל חץ מצביע החוצה,
+   לצד שבו הוא נמצא: "הקודמת" בימין, "הבאה" בשמאל (הדף תמיד מימין לשמאל). */
+.viewer-nav::before { content: ""; width: 14px; height: 14px; border: solid #fff; border-width: 0 3px 3px 0; }
+.viewer-prev::before { transform: translateX(-3px) rotate(-45deg); }
+.viewer-next::before { transform: translateX(3px) rotate(135deg); }
+.viewer-nav:disabled { display: none; }
+.viewer-prev { inset-inline-start: 0; border-start-end-radius: 10px; border-end-end-radius: 10px; }
+.viewer-next { inset-inline-end: 0; border-start-start-radius: 10px; border-end-start-radius: 10px; }
+.viewer-bottom {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+}
+.viewer-status { margin: 0; font-size: 0.9rem; color: #ffd27a; }
+.viewer .button-secondary { background: #e9e6df; color: var(--text); }
+
+/* ─── חלון היצירה ─── */
+.job {
+  width: min(92vw, 460px); padding: 20px; border: 0; border-radius: 12px;
+  background: var(--card); color: var(--text); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+.job::backdrop { background: rgba(0, 0, 0, 0.45); }
+.job-heading { margin-block: 0 12px; }
+.job-running { display: grid; justify-items: center; gap: 8px; text-align: center; }
+.job-lead { margin: 0; font-weight: 600; }
+.job-progress { margin: 0; min-height: 1.5em; color: var(--muted); }
+.job-note { margin: 0; font-size: 0.9rem; }
+.spinner {
+  width: 40px; height: 40px; border-radius: 999px; border: 4px solid #dcd7cc; border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.job-filename { margin-block: 0 12px; font-weight: 600; overflow-wrap: anywhere; }
+.job-buttons { display: grid; gap: 8px; }
+.job-buttons .button { width: 100%; }
+.job-message { margin-block: 12px 0; padding: 10px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn-text); }
+.job-failed { margin-block-start: 12px; font-size: 0.92rem; }
+.job-failed p { margin: 0 0 4px; font-weight: 600; }
+.job-failed ul { margin: 0; padding-inline-start: 20px; }
+.job-footer { display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 16px; }
+.job-footer .button { flex: 1; }
 
 .toast {
   position: fixed; inset-inline: 16px; bottom: 200px; z-index: 30; margin: 0 auto; max-width: 480px;
@@ -187,13 +269,13 @@ input[type="search"] {
 }
 
 @media (min-width: 640px) {
-  .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
   .strip-item { width: 60px; height: 60px; }
 }
 
 @media (min-width: 1024px) {
   .picker.on-location { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; padding-block-end: 0; }
-  .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
   .selection {
     /* inset: auto לפני top: הקיצור inset מאפס גם את top, ובלי top הלוח לא נצמד בגלילה. */
     position: sticky; inset: auto; top: 16px; z-index: auto; border: 1px solid var(--border);
@@ -201,8 +283,10 @@ input[type="search"] {
   }
   .strip { flex-wrap: wrap; overflow: visible; }
   .strip-item { width: 64px; height: 64px; }
+  .selection-actions { flex-direction: column; align-items: stretch; }
   .title-field { flex-direction: column; align-items: stretch; }
   .toast { bottom: 24px; }
+  .viewer { width: min(94vw, 1400px); height: min(94vh, 1000px); margin: auto; border-radius: 12px; }
 }
 
 @media (max-width: 639px) {
