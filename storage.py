@@ -10,11 +10,16 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import logging
 import os
+import shutil
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Iterator
+
+logger = logging.getLogger(__name__)
 
 _thread_locks: dict[Path, threading.Lock] = {}
 _thread_locks_guard = threading.Lock()
@@ -77,3 +82,20 @@ def file_lock(lock_path: Path) -> Iterator[None]:
                 fcntl.flock(fd, fcntl.LOCK_UN)
         finally:
             os.close(fd)
+
+
+def remove_stale_entries(root: Path, max_age_seconds: float) -> None:
+    """מוחק קבצים ותיקיות ב-root שלא השתנו max_age_seconds (שאריות של ריצה שנקטעה)."""
+    try:
+        entries = list(root.iterdir())
+    except FileNotFoundError:
+        return
+    now = time.time()
+    for entry in entries:
+        try:
+            if now - entry.stat().st_mtime > max_age_seconds:
+                shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
+        except OSError:
+            # ניקוי best-effort: מה שנשאר תופס דיסק ולא משפיע על הריצה הנוכחית,
+            # שעובדת בתיקייה חדשה משלה.
+            logger.warning("Could not remove a stale temp entry", exc_info=True)

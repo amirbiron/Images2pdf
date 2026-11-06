@@ -55,6 +55,14 @@ class _Exec:
         return self._fn()
 
 
+class _Upload(_Exec):
+    """כמו HttpRequest של העלאה שאפשר לחדש: next_chunk מחזיר (status, body), ו-body
+    הוא None עד החתיכה האחרונה. כאן הכול עולה בחתיכה אחת."""
+
+    def next_chunk(self, num_retries=0):
+        return None, self._fn()
+
+
 class FakeDrive:
     def __init__(self) -> None:
         self.files_by_id: dict[str, dict] = {}
@@ -62,6 +70,7 @@ class FakeDrive:
         self.update_attempts: list[str] = []
         self.batches: list[int] = []
         self.get_errors: dict[str, tuple[int, str]] = {}  # fileId -> (status, reason): files.get נכשל כך
+        self.upload_error: BaseException | None = None  # העלאת קובץ (create עם media_body) נכשלת כך
 
     # ─── בנייה ───
     def add(self, name, mime=FOLDER, parent=None, *, owned=False, shared=True, can_edit=False, by_app=False, content=b""):
@@ -163,6 +172,8 @@ class FakeDrive:
 
     def create(self, body=None, media_body=None, fields=None, **kw):
         def run():
+            if media_body is not None and self.upload_error is not None:
+                raise self.upload_error
             content = b""
             if media_body is not None:
                 fh = media_body._fd
@@ -174,7 +185,7 @@ class FakeDrive:
             f = self.files_by_id[fid]
             return {"id": fid, "name": f["name"], "size": str(len(content)), "parents": f["parents"],
                     "webViewLink": f"https://drive.google.com/file/d/{fid}/view"}
-        return _Exec(run)
+        return _Upload(run)
 
     def update(self, fileId=None, body=None, **kw):
         def run():

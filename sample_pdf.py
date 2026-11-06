@@ -10,38 +10,24 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
-import socket
 import tempfile
-import threading
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-import httplib2
 from flask import Blueprint, current_app, redirect, render_template, request, send_file
 from googleapiclient.errors import HttpError
 
 from config import is_valid_drive_id
-from google_api import (
-    FOLDER_MIME,
-    DownloadTooLarge,
-    MAX_DOWNLOAD_BYTES,
-    drive_download_to_file,
-    drive_get,
-    drive_list_folder,
-    http_error_reason,
-    http_status,
-)
+from google_api import FOLDER_MIME, drive_get, drive_list_folder, http_status
 from pdf_builder import TITLE_MAX_CHARS, clean_title, drawable_title, folder_url, pdf_filename
-from pdf_job import MAX_IMAGES, FetchError, SourceItem, run_pdf_job
-from storage import atomic_write_bytes, data_dir_problem
+from pdf_job import MAX_IMAGES, GenerationLock, SourceItem, run_pdf_job
+from pdf_jobs import drive_fetch
+from storage import atomic_write_bytes, data_dir_problem, remove_stale_entries
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("sample_pdf", __name__)
 
-_job_lock = threading.Lock()  # קובץ אחד בכל פעם; לחיצה כפולה מקבלת הודעה ולא יצירה שנייה
 _STALE_TMP_SECONDS = 3600
 
 
@@ -76,24 +62,6 @@ def _mb(value: int | None) -> float | None:
     return None if value is None else round(value / (1024 * 1024), 1)
 
 
-def _cleanup_stale_tmp() -> None:
-    """תיקיות זמניות שנשארו מריצה שנקטעה (למשל worker שנהרג באמצע)."""
-    root = _tmp_root()
-    try:
-        entries = list(root.iterdir())
-    except FileNotFoundError:
-        return
-    now = time.time()
-    for entry in entries:
-        try:
-            if now - entry.stat().st_mtime > _STALE_TMP_SECONDS:
-                shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
-        except OSError:
-            # ניקוי best-effort: תיקייה שנשארה תופסת דיסק ולא משפיעה על הריצה הנוכחית,
-            # שעובדת בתיקייה חדשה משלה.
-            logger.warning("Could not remove a stale temp entry", exc_info=True)
-
-
 def _first_images(folder_id: str) -> list[SourceItem]:
     items: list[SourceItem] = []
     token = None
@@ -106,22 +74,6 @@ def _first_images(folder_id: str) -> list[SourceItem]:
         if not token:
             break
     return items[:MAX_IMAGES]
-
-
-def _drive_fetch(item: SourceItem, dest) -> int:
-    """הורדה מדרייב. כשל של קובץ בודד הופך ל-FetchError עם סיבה בעברית;
-    RefreshError ו-GoogleNotConnected לא נתפסים כאן ועולים למסך החיבור מחדש."""
-    try:
-        return drive_download_to_file(item.id, dest)
-    except DownloadTooLarge:
-        raise FetchError(f"הקובץ גדול מ-{MAX_DOWNLOAD_BYTES // (1024 * 1024)}MB.") from None
-    except HttpError as exc:
-        reason = http_error_reason(exc)
-        logger.warning("Drive download failed: HTTP %s %s", http_status(exc), reason)
-        raise FetchError(f"ההורדה מדרייב נכשלה (HTTP {http_status(exc)}).") from None
-    except (httplib2.HttpLib2Error, socket.timeout, ConnectionError) as exc:
-        logger.warning("Drive download failed: %s", type(exc).__name__)
-        raise FetchError("ההורדה מדרייב נכשלה (תקלת רשת).") from None
 
 
 @bp.get("/dev/sample-pdf")
@@ -162,7 +114,9 @@ def run():
     if len(raw_title) > TITLE_MAX_CHARS * 2:
         return _error("הכותרת ארוכה מדי", f"הכותרת יכולה להכיל עד {TITLE_MAX_CHARS} תווים.", 400)
 
-    if not _job_lock.acquire(blocking=False):
+    # אותה נעילה כמו בבורר: יצירה אחת בכל רגע, גם בין הדף הזה לבורר (זיכרון של 512MB).
+    lock = GenerationLock(_data_dir())
+    if not lock.try_acquire():
         return _error("כבר נוצר קובץ", "יצירת קובץ קודמת עדיין רצה. מחכים שתסתיים ומרעננים את הדף.", 409)
     try:
         try:
@@ -185,12 +139,12 @@ def run():
         if not items:
             return _error("אין תמונות בתיקייה", "בתיקייה הזו אין תמונות JPEG או PNG (תתי-תיקיות לא נסרקות כאן).", 400)
 
-        _cleanup_stale_tmp()
+        remove_stale_entries(_tmp_root(), _STALE_TMP_SECONDS)
         _tmp_root().mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=_tmp_root(), prefix="sample-") as work:
             job = run_pdf_job(
                 items,
-                _drive_fetch,
+                drive_fetch,
                 title=title,
                 link_url=folder_url(folder_id),
                 out_path=_pdf_path(),
@@ -247,7 +201,7 @@ def run():
                     logger.error("Could not remove the stale sample PDF result", exc_info=True)
             return _error("התוצאה לא נשמרה", "הקובץ נוצר, אבל שמירת התוצאה לדיסק נכשלה.", 500)
     finally:
-        _job_lock.release()
+        lock.release()
     return redirect("/dev/sample-pdf#result", code=303)
 
 

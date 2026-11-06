@@ -12,9 +12,9 @@ const directPng = readFileSync(args.directPng);
 function assert(cond, msg) { if (!cond) { throw new Error("FAILED: " + msg); } console.log("ok  - " + msg); }
 
 const VIEWPORTS = [
-  { name: "phone", options: { ...devices["iPhone 13"], locale: "he-IL" } },
-  { name: "tablet", options: { viewport: { width: 800, height: 1280 }, hasTouch: true, locale: "he-IL" } },
-  { name: "desktop", options: { viewport: { width: 1440, height: 900 }, locale: "he-IL" } },
+  { name: "phone", options: { ...devices["iPhone 13"], locale: "he-IL", ignoreHTTPSErrors: true } },
+  { name: "tablet", options: { viewport: { width: 800, height: 1280 }, hasTouch: true, locale: "he-IL", ignoreHTTPSErrors: true } },
+  { name: "desktop", options: { viewport: { width: 1440, height: 900 }, locale: "he-IL", ignoreHTTPSErrors: true } },
 ];
 
 const browser = await chromium.launch();
@@ -102,6 +102,16 @@ try {
     });
     assert(brokenNameOpacity === "1", `${vp.name}: כשתמונה ממוזערת לא נטענת, השם מוצג במקומה`);
 
+    // שלב 3: משבצת לרוחב (4:3) בלי חיתוך; בטלפון שתי עמודות
+    const shape = await page.evaluate(() => {
+      const t = document.querySelector(".tile-image");
+      const r = t.getBoundingClientRect();
+      return { ratio: r.width / r.height, fit: getComputedStyle(t.querySelector("img")).objectFit,
+        cols: getComputedStyle(document.getElementById("grid")).gridTemplateColumns.split(" ").length };
+    });
+    assert(Math.abs(shape.ratio - 4 / 3) < 0.03 && shape.fit === "contain", `${vp.name}: משבצת לרוחב, התמונה בלי חיתוך (${shape.ratio.toFixed(2)}, ${shape.fit})`);
+    if (vp.name === "phone") { assert(shape.cols === 2, `${vp.name}: שתי עמודות (${shape.cols})`); }
+
     const box = await page.locator(".tile-image").first().boundingBox();
     assert(box.width >= 44 && box.height >= 44, `${vp.name}: אריח בגודל נוח למגע (${Math.round(box.width)}px)`);
 
@@ -119,6 +129,42 @@ try {
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({ path: join(args.shots, `${vp.name}-3-folder-top.png`) });
 
+    // 6א. כפתור ההגדלה: פותח בגדול בלי לבחור, מדפדף, ומאפשר לבחור מתוך התצוגה
+    const zoomBox = await page.locator('.tile-image[data-name="גינה 3.jpg"] .tile-zoom').boundingBox();
+    assert(zoomBox.width >= 44 && zoomBox.height >= 44, `${vp.name}: כפתור ההגדלה בגודל נוח למגע (${Math.round(zoomBox.width)}px)`);
+    await page.click('.tile-image[data-name="גינה 3.jpg"] .tile-zoom');
+    await page.waitForSelector("#viewer[open]");
+    assert((await page.textContent("#viewer-name")) === "גינה 3" && (await page.textContent("#viewer-count")) === "3 מתוך 60",
+      `${vp.name}: התצוגה המוגדלת נפתחת על התמונה שנלחצה`);
+    assert((await countText()) === "נבחרו 2 מתוך 12", `${vp.name}: ההגדלה לא בוחרת את התמונה`);
+    await page.waitForFunction(() => document.getElementById("viewer-high").classList.contains("loaded"), null, { timeout: 10000 });
+    const highSrc = await page.getAttribute("#viewer-high", "src");
+    assert(/=s1600$/.test(highSrc) || highSrc.endsWith("?size=large"), `${vp.name}: נטענת גרסה גדולה (${highSrc.slice(-20)})`);
+    await page.waitForFunction(() => document.getElementById("viewer-low").classList.contains("loaded"), null, { timeout: 10000 });
+    assert(true, `${vp.name}: גם התמונה הקטנה בתצוגה המוגדלת נטענת כשהקישור הישיר נחסם (בלי אייקון שבור)`);
+    const nav = await page.evaluate(() => {
+      const mid = window.innerWidth / 2;
+      const prev = document.getElementById("viewer-prev").getBoundingClientRect();
+      const next = document.getElementById("viewer-next").getBoundingClientRect();
+      return { prevRight: prev.left > mid, nextLeft: next.right < mid };
+    });
+    await page.click("#viewer-next");
+    await page.click("#viewer-prev"); // עכשיו "הקודמת" מוצגת
+    const nav2 = await page.evaluate(() => {
+      const prev = document.getElementById("viewer-prev").getBoundingClientRect();
+      return prev.left > window.innerWidth / 2;
+    });
+    assert(nav.nextLeft && nav2, `${vp.name}: "הבאה" בצד שמאל ו"הקודמת" בצד ימין`);
+    await page.screenshot({ path: join(args.shots, `${vp.name}-5-viewer.png`) });
+    await page.click("#viewer-next");
+    assert((await page.textContent("#viewer-name")) === "גינה 4", `${vp.name}: "הבאה" עוברת לתמונה הבאה`);
+    await page.click("#viewer-select");
+    assert((await countText()) === "נבחרו 3 מתוך 12" && (await badgeOf("גינה 4.jpg")) === "3", `${vp.name}: בחירה מתוך התצוגה המוגדלת`);
+    await page.click("#viewer-select");
+    assert((await countText()) === "נבחרו 2 מתוך 12", `${vp.name}: הסרה מתוך התצוגה המוגדלת`);
+    await page.keyboard.press("Escape");
+    assert(!(await page.isVisible("#viewer")), `${vp.name}: Escape סוגר את התצוגה המוגדלת`);
+
     // 7. בחירה מתת-תיקייה עד 12, וניסיון לבחור תמונה 13
     for (let i = 1; i <= 10; i++) { await page.click(`.tile-image[data-name="גינה ${i}.jpg"]`); }
     assert((await countText()) === "נבחרו 12 מתוך 12", `${vp.name}: בחירה מכמה תתי-תיקיות (2 + 10)`);
@@ -127,6 +173,11 @@ try {
     assert((await page.textContent("#toast")).includes("עד 12"), `${vp.name}: ההודעה מסבירה את המגבלה`);
     assert((await countText()) === "נבחרו 12 מתוך 12" && (await badgeOf("גינה 11.jpg")) === "", `${vp.name}: תמונה 13 לא נבחרה`);
     assert((await page.locator("#selection-strip li").count()) === 12, `${vp.name}: רצועת הבחירה מציגה את כל 12`);
+    await page.click('.tile-image[data-name="גינה 11.jpg"] .tile-zoom');
+    await page.click("#viewer-select");
+    assert((await page.textContent("#viewer-status")).includes("עד 12") && (await countText()) === "נבחרו 12 מתוך 12",
+      `${vp.name}: גם בתצוגה המוגדלת אי אפשר לבחור תמונה 13, וההודעה מוצגת בתוכה`);
+    await page.click("#viewer-close");
     await noOverflow("תיקייה עם 60 תמונות");
     await page.screenshot({ path: join(args.shots, `${vp.name}-2-selection.png`) });
 
@@ -202,6 +253,105 @@ try {
     await page.evaluate((id) => { location.hash = "#/l/" + id; }, args.ids.villa);
     await page.waitForFunction(() => document.getElementById("location-heading").textContent === "וילה כרמל");
     assert((await countText()) === "לא נבחרו תמונות", `${vp.name}: אחרי אישור הבחירה מתאפסת`);
+
+    // ─── שלב 3: יצירה ושמירה ───
+    const pdfCount = async () => (await (await page.request.get(args.base + "/_test/count")).json()).pdfs;
+    const waitHeading = (text) => page.waitForFunction((t) => document.getElementById("job-heading").textContent === t, text, { timeout: 30000 });
+    const stubShare = (filesSupported) => page.evaluate((files) => {
+      // Chromium בלי ראש לא משתף קבצים; מדמים דפדפן טלפון שכן (files=true), או דפדפן שמשתף
+      // רק קישורים וטקסט ו-canShare שלו מחזיר false על קבצים (files=false). לפי MDN.
+      window.__shared = null;
+      Object.defineProperty(navigator, "canShare", { configurable: true,
+        value: (d) => !!(d && d.files && files && d.files.length === 1 && d.files[0].type === "application/pdf") });
+      Object.defineProperty(navigator, "share", { configurable: true,
+        value: (d) => { window.__shared = { name: d.files[0].name, size: d.files[0].size, type: d.files[0].type }; return Promise.resolve(); } });
+    }, filesSupported);
+    const withShare = vp.name !== "desktop";
+
+    // 14. יצירת PDF: חלון המתנה עם התקדמות, תוצאה, הורדה, קישור לדרייב, ושיתוף (או רק הורדה)
+    for (const n of ["סלון 1.jpg", "סלון 2.jpg", "סלון 3.jpg"]) { await page.click(`.tile-image[data-name="${n}"]`); }
+    await stubShare(withShare);
+    let before = await pdfCount();
+    await page.request.get(args.base + "/_test/slow?on=1"); // 1.2 שניות לתמונה: שאלת המצב הראשונה (אחרי 2 שניות) תופסת את ההתקדמות
+    await page.click("#create-pdf");
+    await page.waitForSelector("#job[open]");
+    assert((await page.textContent(".job-lead")) === "מכין את הקובץ, זה יכול לקחת עד דקה." && (await page.isVisible(".job-lead")),
+      `${vp.name}: "מכין את הקובץ, זה יכול לקחת עד דקה" מיד אחרי הלחיצה (${await page.textContent("#job-heading")} | ${await page.textContent("#job-message")})`);
+    await page.waitForFunction(() => /מעבד תמונה \d מתוך 3/.test(document.getElementById("job-progress").textContent));
+    assert(await page.isVisible("#job-running"), `${vp.name}: התקדמות בזמן היצירה ("מעבד תמונה N מתוך 3")`);
+    await page.request.get(args.base + "/_test/slow?on=0");
+    await waitHeading("הקובץ מוכן");
+    const filename = await page.textContent("#job-filename");
+    assert(/^וילה כרמל \d\d-\d\d-\d{4}\.pdf$/.test(filename), `${vp.name}: שם הקובץ (${filename})`);
+    const order = await page.evaluate(() => {
+      const [title, tail] = document.querySelectorAll("#job-filename bdi");
+      return { tailLeftOfTitle: tail.getBoundingClientRect().right <= title.getBoundingClientRect().left + 1, tailDir: getComputedStyle(tail).direction };
+    });
+    assert(order.tailLeftOfTitle && order.tailDir === "ltr", `${vp.name}: שם הקובץ מוצג בסדר הנכון (הכותרת מימין, התאריך והסיומת משמאל)`);
+    assert((await page.isVisible("#job-drive")) && (await page.getAttribute("#job-drive", "href")).startsWith("https://drive.google.com/"),
+      `${vp.name}: קישור לקובץ שנשמר בדרייב`);
+    assert((await pdfCount()) === before + 1, `${vp.name}: הקובץ נשמר בדרייב פעם אחת`);
+    const [download] = await Promise.all([page.waitForEvent("download"), page.click("#job-download")]);
+    assert(download.suggestedFilename() === filename, `${vp.name}: ההורדה בשם בעברית (${download.suggestedFilename()})`);
+    if (withShare) {
+      await page.waitForSelector("#job-share:not([hidden])");
+      await page.click("#job-share");
+      const shared = await page.evaluate(() => window.__shared);
+      assert(shared && shared.name === filename && shared.type === "application/pdf" && shared.size > 1000,
+        `${vp.name}: "שיתוף" פותח את חלון השיתוף עם קובץ ה-PDF (${shared && shared.size} בתים)`);
+    } else {
+      await page.waitForTimeout(500);
+      assert(!(await page.isVisible("#job-share")) && (await page.isVisible("#job-download")), `${vp.name}: דפדפן שלא משתף קבצים — רק הורדה`);
+    }
+    await page.screenshot({ path: join(args.shots, `${vp.name}-4-result.png`) });
+    await page.click("#job-close");
+    assert(!(await page.isVisible("#job")), `${vp.name}: סגירת חלון התוצאה`);
+
+    // 15. החיבור נופל באמצע היצירה (מסך נעול), והלשונית נטענת מחדש כשחוזרים אליה
+    before = await pdfCount();
+    await page.route("**/api/pdf/jobs", async (route) => {
+      if (route.request().method() !== "POST") { return route.continue(); }
+      route.fetch().catch(() => {});                      // הבקשה מגיעה לשרת...
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await route.abort("connectionreset");               // ...והדפדפן מאבד את החיבור
+    });
+    await page.click("#create-pdf");
+    await page.waitForSelector("#job[open]");
+    await page.waitForTimeout(400);
+    await page.unroute("**/api/pdf/jobs");
+    await page.reload();
+    await waitHeading("הקובץ מוכן");
+    assert((await pdfCount()) === before + 1, `${vp.name}: אחרי ניתוק וטעינה מחדש — הקובץ מוכן, ונשמר פעם אחת`);
+    await page.click("#job-close");
+
+    // 16. שתי לחיצות מהירות: קובץ אחד
+    before = await pdfCount();
+    await page.evaluate(() => { const b = document.getElementById("create-pdf"); b.click(); b.click(); });
+    await waitHeading("הקובץ מוכן");
+    await page.waitForTimeout(300);
+    assert((await pdfCount()) === before + 1, `${vp.name}: שתי לחיצות מהירות יוצרות קובץ אחד`);
+    await page.click("#job-close");
+
+    // 17. השמירה בדרייב נכשלת: ההורדה עדיין זמינה, עם הודעה
+    await page.request.get(args.base + "/_test/upload_error?on=1");
+    await page.click("#create-pdf");
+    await waitHeading("הקובץ מוכן");
+    assert((await page.textContent("#job-message")).includes("לא נשמר בדרייב") && !(await page.isVisible("#job-drive")),
+      `${vp.name}: שמירה שנכשלה מוצגת`);
+    const [download2] = await Promise.all([page.waitForEvent("download"), page.click("#job-download")]);
+    assert(download2.suggestedFilename().endsWith(".pdf"), `${vp.name}: וההורדה עדיין זמינה`);
+    await page.request.get(args.base + "/_test/upload_error?on=0");
+    await page.click("#job-close");
+
+    // 18. ההרשאה בוטלה: הודעה עם קישור לחיבור מחדש
+    await page.request.get(args.base + "/_test/revoked?on=1");
+    await page.click("#create-pdf");
+    await waitHeading("הקובץ לא נוצר");
+    assert((await page.textContent("#job-message")).includes("צריך לחבר מחדש") && (await page.getAttribute("#job-message a", "href")) === "/settings",
+      `${vp.name}: הרשאה שבוטלה — מסך חיבור מחדש`);
+    await page.request.get(args.base + "/_test/revoked?on=0");
+    await page.click("#job-close");
+    await noOverflow("אחרי יצירה");
 
     assert(problems.length === 0, `${vp.name}: אין שגיאות JavaScript ואין הפרות CSP (${problems.join(" | ")})`);
     await context.close();

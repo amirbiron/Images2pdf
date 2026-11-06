@@ -15,6 +15,7 @@ from PIL import Image
 from pypdf import PdfReader
 
 import google_api
+import pdf_jobs
 import sample_pdf
 from token_store import StoredGrant
 
@@ -37,13 +38,14 @@ def drive(app, monkeypatch):
     fake.add("סרטון.mp4", "video/mp4", folder)
     fake.folder_id = folder
 
-    def fake_download(file_id, dest):
+    def fake_download(file_id, dest, require_mimes=None):
         data = fake.files_by_id[file_id]["content"]
         with open(dest, "wb") as fh:
             fh.write(data)
         return len(data)
 
-    monkeypatch.setattr(sample_pdf, "drive_download_to_file", fake_download)
+    # ההורדה עוברת דרך pdf_jobs.drive_fetch, המשותפת לדף הזה ולבורר
+    monkeypatch.setattr(pdf_jobs, "drive_download_to_file", fake_download)
     # הדף בודק שיש חשבון מחובר
     app.extensions["images2pdf"].token_store.save(
         StoredGrant("1//r", "owner@example.com", ("a",), "2026-11-05T00:00:00+00:00")
@@ -105,13 +107,13 @@ def test_parallel_requests_create_one_file_at_a_time(app, drive, monkeypatch):
     """שתי לחיצות באותו רגע: אחת יוצרת, השנייה מקבלת 409 — בלי יצירה כפולה."""
     from helpers import PASSWORD
 
-    real = sample_pdf.drive_download_to_file
+    real = pdf_jobs.drive_download_to_file
 
-    def slow_download(file_id, dest):
+    def slow_download(file_id, dest, require_mimes=None):
         time.sleep(0.05)
-        return real(file_id, dest)
+        return real(file_id, dest, require_mimes=require_mimes)
 
-    monkeypatch.setattr(sample_pdf, "drive_download_to_file", slow_download)
+    monkeypatch.setattr(pdf_jobs, "drive_download_to_file", slow_download)
     clients = []
     for _ in range(2):
         c = app.test_client()
