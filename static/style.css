@@ -196,7 +196,9 @@ input[type="search"] {
 .title-field label { flex-shrink: 0; font-weight: 600; font-size: 0.92rem; }
 .title-field input { flex: 1; min-width: 0; font-size: 1rem; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; min-height: 44px; }
 .button.create { flex-shrink: 0; white-space: nowrap; }
-.button:disabled { opacity: 0.5; cursor: not-allowed; }
+/* רק כפתור היצירה: הכלל הכללי `.button:disabled` (סמן "המתנה") משמש את form_wait.js
+   בשליחת טפסים, ואסור לדרוס אותו. */
+.button.create:disabled { opacity: 0.5; cursor: not-allowed; }
 .picker.on-location { padding-block-end: 200px; }
 
 /* ─── תצוגה מוגדלת ─── */

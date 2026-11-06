@@ -352,6 +352,36 @@ def test_finished_jobs_older_than_a_day_are_removed(app, logged_in, drive):
     assert (jobs / f"{JOB}.pdf").exists()
 
 
+def test_interrupted_jobs_nobody_asks_about_are_cleaned_too(app, logged_in, drive):
+    """תהליך שנהרג באמצע עבודה משאיר רשומה "רצה". אם אף דפדפן לא שואל עליה, היא מסומנת
+    כנקטעת כשעבודה חדשה מתחילה, ונמחקת לפי אותם כללים של עבודה שהסתיימה."""
+    jobs = app.extensions["images2pdf"].settings.data_dir / "jobs"
+    jobs.mkdir(exist_ok=True)
+    old, recent = _job_id(8), _job_id(9)
+    for job_id, age in ((old, 25 * 3600), (recent, 60)):
+        (jobs / f"{job_id}.json").write_text(json.dumps(
+            {"id": job_id, "status": "running", "pdf": False, "updated_at": time.time() - age}))
+    assert logged_in.post(f"{BASE_URL}/api/pdf/jobs", json=_body(drive)).status_code == 200
+    assert not (jobs / f"{old}.json").exists()
+    kept = json.loads((jobs / f"{recent}.json").read_text())
+    assert kept["status"] == "failed" and kept["error"] == "interrupted"
+    assert json.loads((jobs / f"{JOB}.json").read_text())["status"] == "done"  # העבודה החדשה לא נגעה בעצמה
+
+
+def test_cleanup_never_touches_a_job_that_is_really_running(app, logged_in, drive):
+    """עבודה חיה מחזיקה את נעילת היצירה (כאן: מוחזקת בבדיקה, כמו תהליך אחר). בקשה חדשה
+    מקבלת busy לפני הניקוי, ולכן הרשומה של העבודה החיה נשארת "רצה"."""
+    _write_running(app, _job_id(5))
+    lock = GenerationLock(app.extensions["images2pdf"].settings.data_dir)
+    assert lock.try_acquire()
+    try:
+        assert logged_in.post(f"{BASE_URL}/api/pdf/jobs", json=_body(drive)).status_code == 409
+        jobs = app.extensions["images2pdf"].settings.data_dir / "jobs"
+        assert json.loads((jobs / f"{_job_id(5)}.json").read_text())["status"] == "running"
+    finally:
+        lock.release()
+
+
 # ─── ולידציה ───────────────────────────────────────────────────
 
 def _bad(drive, **changes):

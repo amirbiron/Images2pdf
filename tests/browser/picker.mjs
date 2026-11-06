@@ -268,6 +268,9 @@ try {
     }, filesSupported);
     const withShare = vp.name !== "desktop";
 
+    const createIdle = await page.$eval("#create-pdf", (b) => ({ disabled: b.disabled, cursor: getComputedStyle(b).cursor }));
+    assert(createIdle.disabled && createIdle.cursor === "not-allowed", `${vp.name}: בלי בחירה, "יצירת PDF" נעול (${createIdle.cursor})`);
+
     // 14. יצירת PDF: חלון המתנה עם התקדמות, תוצאה, הורדה, קישור לדרייב, ושיתוף (או רק הורדה)
     for (const n of ["סלון 1.jpg", "סלון 2.jpg", "סלון 3.jpg"]) { await page.click(`.tile-image[data-name="${n}"]`); }
     await stubShare(withShare);

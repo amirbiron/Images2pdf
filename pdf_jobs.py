@@ -123,16 +123,27 @@ def _remove(job_id: str) -> None:
 
 
 def _cleanup_old_jobs() -> None:
-    """עבודות שהסתיימו לפני יותר מ-24 שעות, וכל מה שמעבר ל-MAX_KEPT_JOBS האחרונות."""
+    """עבודות שהסתיימו לפני יותר מ-24 שעות, וכל מה שמעבר ל-MAX_KEPT_JOBS האחרונות.
+
+    נקרא רק אחרי שהבקשה הנוכחית קיבלה את נעילת היצירה, ולפני שהרשומה שלה נשמרה. לכן
+    באותו רגע אף עבודה אחרת לא רצה, וכל רשומה אחרת שמסומנת "רצה" נקטעה (תהליך שנהרג
+    באמצע). בלי זה, רשומה כזו שאף דפדפן לא שואל עליה נשארת בדיסק לתמיד. השמירה שלה
+    נמדדת מהזמן שבו היא התקדמה לאחרונה, ולא מהרגע שבו סומנה כנקטעת.
+    """
     records = []
     for path in _jobs_dir().glob("*.json"):
         job_id = path.stem
         if not JOB_ID_RE.fullmatch(job_id):
             continue
         record = _load(job_id)
-        if record is None or record.get("status") == "running":
+        if record is None:
             continue
-        records.append((record.get("updated_at") or 0, job_id))
+        last_update = record.get("updated_at") or 0
+        if record.get("status") == "running":
+            logger.warning("Found an interrupted PDF job during cleanup")
+            record.update(status="failed", error="interrupted")
+            _save(record)
+        records.append((last_update, job_id))
     records.sort(reverse=True)
     now = time.time()
     for i, (updated, job_id) in enumerate(records):
