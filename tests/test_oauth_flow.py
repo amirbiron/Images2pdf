@@ -78,7 +78,7 @@ def test_start_builds_the_google_request(logged_in):
 def test_successful_connection_is_saved_encrypted(app, logged_in, google):
     params = _start(logged_in)
     resp = logged_in.get(f"{BASE_URL}/oauth/callback?state={params['state']}&code=4/abc")
-    assert resp.status_code == 303 and resp.headers["Location"] == "/?connected=1"
+    assert resp.status_code == 303 and resp.headers["Location"] == "/settings?connected=1"
 
     token_call = next(c for c in google["calls"] if c["url"] == GOOGLE_TOKEN_URL)
     assert token_call["data"]["grant_type"] == "authorization_code"
@@ -89,7 +89,7 @@ def test_successful_connection_is_saved_encrypted(app, logged_in, google):
     assert grant.refresh_token == "1//refresh"
     assert set(grant.scopes) == set(DRIVE_SCOPES)
 
-    home = logged_in.get(f"{BASE_URL}/").get_data(as_text=True)
+    home = logged_in.get(f"{BASE_URL}/settings").get_data(as_text=True)
     assert "O***@Example.com" in home
     assert "1//refresh" not in home
 

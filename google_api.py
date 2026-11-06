@@ -189,11 +189,12 @@ def escape_query_value(text: str) -> str:
 
 
 def drive_search_folders(text: str, page_token: str | None = None, page_size: int = 100) -> dict:
-    """חיפוש תיקיות לפי שם.
+    """חיפוש תיקיות לפי שם, ממוין לפי שם במיון טבעי (1, 2, 12 ולא 1, 12, 2).
 
     `name contains` בדרייב הוא התאמת קידומת ולא תת-מחרוזת: 'Hello' מוצא את
     HelloWorld, ו-'World' לא. מקור:
     https://developers.google.com/workspace/drive/api/guides/ref-search-terms
+    מקור ל-name_natural: מסמך ה-discovery של drive v3, הפרמטר orderBy של files.list.
     """
     query = (
         f"mimeType = '{FOLDER_MIME}' and name contains '{escape_query_value(text)}' "
@@ -207,6 +208,7 @@ def drive_search_folders(text: str, page_token: str | None = None, page_size: in
             fields="nextPageToken, incompleteSearch, files(id, name, parents)",
             pageSize=page_size,
             pageToken=page_token,
+            orderBy="name_natural",
             supportsAllDrives=True,
             includeItemsFromAllDrives=True,
         )
@@ -242,7 +244,7 @@ def drive_list_folder(
             fields="nextPageToken, files(id, name, mimeType, thumbnailLink, parents, capabilities(canEdit))",
             pageSize=page_size,
             pageToken=page_token,
-            orderBy="folder,name",
+            orderBy="folder,name_natural",
             supportsAllDrives=True,
             includeItemsFromAllDrives=True,
         )
@@ -261,6 +263,39 @@ def _list_result(result: object) -> dict:
         "nextPageToken": token if isinstance(token, str) else None,
         "incompleteSearch": result.get("incompleteSearch") is True,
     }
+
+
+FOLDER_NAMES_BATCH = 50  # דרייב מגביל batch ל-100 קריאות; 50 משאיר מרווח
+
+
+def drive_folder_names(ids) -> dict[str, str]:
+    """שמות של כמה תיקיות בבקשת batch אחת (במקום קריאה לכל תיקייה). {id: name}.
+
+    תיקייה שהחשבון לא רואה (למשל תיקיית אב של תיקייה ששותפה איתו) פשוט לא מופיעה
+    בתוצאה: זה מצב צפוי ולא תקלה, ולכן כשל של פריט בודד לא נזרק. כשל של ה-batch
+    כולו (רשת, הרשאה שפגה) כן נזרק.
+    מקור ל-API: googleapiclient/http.py, BatchHttpRequest.add ו-callback(request_id, response, exception).
+    """
+    unique = [i for i in dict.fromkeys(ids) if is_valid_drive_id(i)]
+    names: dict[str, str] = {}
+    failed = 0
+
+    def on_response(request_id, response, exception):
+        nonlocal failed
+        if exception is None and isinstance(response, dict) and isinstance(response.get("name"), str):
+            names[request_id] = response["name"]
+        else:
+            failed += 1
+
+    svc = get_drive_service()
+    for start in range(0, len(unique), FOLDER_NAMES_BATCH):
+        batch = svc.new_batch_http_request(callback=on_response)
+        for folder_id in unique[start : start + FOLDER_NAMES_BATCH]:
+            batch.add(svc.files().get(fileId=folder_id, fields="name", supportsAllDrives=True), request_id=folder_id)
+        batch.execute()
+    if failed:
+        logger.info("Folder names: %d of %d not visible to the account", failed, len(unique))
+    return names
 
 
 def drive_get(file_id: str, fields: str) -> dict:

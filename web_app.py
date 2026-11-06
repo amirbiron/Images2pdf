@@ -16,11 +16,14 @@ from google.auth.exceptions import RefreshError
 import auth
 import dev_checks
 import oauth
+import picker_api
 import sample_pdf
 import thumbnails
 from config import Settings, load_settings
 from google_api import GoogleNotConnected, forget_cached_clients, refresh_error_kind
 from login_limiter import LoginLimiter
+from pdf_builder import TITLE_MAX_CHARS
+from pdf_job import MAX_IMAGES
 from oauth_state import OAuthStateStore
 from storage import data_dir_problem
 from token_store import TokenStore, TokenUnreadable
@@ -30,9 +33,10 @@ logger = logging.getLogger("images2pdf")
 _CSP = "; ".join(
     [
         "default-src 'self'",
-        # https: ולא רשימת מארחים: בדיקה 5 מודדת אם קישורים ישירים של גוגל נטענים,
-        # ומדיניות צרה מדי הייתה חוסמת אותם בעצמה ונותנת תוצאה שגויה. יצומצם בשלב 2.
-        "img-src 'self' https: data:",
+        # התמונות הממוזערות של גוגל מגיעות מ-googleusercontent.com: בבדיקה 5 של שלב 0 הן
+        # נטענו ישירות וגם דרך השרת, והשרת שולח את הבקשה רק למארח הזה (is_allowed_thumbnail_url).
+        # תמונה שנחסמת בכל זאת עוברת בדפדפן לנתיב שדרך השרת ('self').
+        "img-src 'self' data: https://googleusercontent.com https://*.googleusercontent.com",
         "script-src 'self'",
         "style-src 'self'",
         "object-src 'none'",
@@ -88,9 +92,11 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(dev_checks.bp)
     app.register_blueprint(thumbnails.bp)
     app.register_blueprint(sample_pdf.bp)
+    app.register_blueprint(picker_api.bp)
 
     app.add_url_rule("/healthz", "healthz", healthz)
     app.add_url_rule("/", "index", index)
+    app.add_url_rule("/settings", "settings", settings_page)
 
     app.register_error_handler(RefreshError, _on_refresh_error)
     app.register_error_handler(GoogleNotConnected, _on_not_connected)
@@ -155,11 +161,17 @@ def healthz():
     return "ok", 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 
-def index():
+def _connection_status() -> tuple[dict, list[str]]:
+    """מצב החיבור לגוגל, ורשימת ההגדרות שחסרות (בעברית)."""
     services = current_app.extensions["images2pdf"]
     settings = services.settings
+    problems = list(settings.google_problems)
+    disk = data_dir_problem(settings.data_dir)
+    if disk:
+        problems.append(disk)
     status = {"state": "not_configured"}
-    if services.token_store is not None:
+    # כשהדיסק לא תקין לא נוגעים בקובץ ההרשאה (stat עלול לזרוק NotADirectoryError).
+    if services.token_store is not None and disk is None:
         try:
             grant = services.token_store.load()
         except TokenUnreadable:
@@ -177,18 +189,32 @@ def index():
                     "connected_at": grant.connected_at,
                     "time_limited": grant.refresh_token_expires_in is not None,
                 }
-    problems = list(settings.google_problems)
-    disk = data_dir_problem(settings.data_dir)
-    if disk:
-        problems.append(disk)
+    return status, problems
+
+
+def _settings_response(status: dict, problems: list[str]):
     return render_template(
-        "index.html",
+        "settings.html",
         status=status,
         problems=problems,
         redirect_uri=oauth.redirect_uri(),
         just_connected=request.args.get("connected") == "1",
         just_disconnected=request.args.get("disconnected") == "1",
     )
+
+
+def index():
+    """המסך הראשון הוא חיפוש לוקיישן (ROADMAP). בלי חיבור לגוגל — דף החיבור."""
+    status, problems = _connection_status()
+    if not problems and status["state"] == "connected":
+        return render_template("picker.html", max_images=MAX_IMAGES, title_max=TITLE_MAX_CHARS)
+    return _settings_response(status, problems)
+
+
+def settings_page():
+    """מצב החיבור לגוגל, חיבור וניתוק, וכתובת החזרה להגדרה ב-Google Cloud."""
+    status, problems = _connection_status()
+    return _settings_response(status, problems)
 
 
 # ─── שגיאות ───────────────────────────────────────────────────

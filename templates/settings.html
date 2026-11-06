@@ -12,7 +12,8 @@
     <p>מחובר לחשבון <strong dir="ltr">{{ status.email }}</strong>, מאז <span dir="ltr">{{ status.connected_at }}</span> (UTC).</p>
     {% if status.time_limited %}<p class="alert alert-warn">בחרת בגוגל גישה מוגבלת בזמן. כשהיא תפוג, יופיע מסך חיבור מחדש.</p>{% endif %}
     <div class="row">
-      <a class="button" href="/dev/checks">לדף הבדיקות</a>
+      <a class="button" href="/">למסך החיפוש</a>
+      <a class="button button-secondary" href="/dev/checks">לדף הבדיקות</a>
       <form method="post" action="/oauth/disconnect" class="inline-form"><button type="submit" class="button button-secondary">ניתוק החשבון</button></form>
     </div>
   {% elif status.state == "unreadable" %}

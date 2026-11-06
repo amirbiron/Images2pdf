@@ -207,7 +207,7 @@ def callback():
         )
     forget_cached_clients()
     logger.info("Google account connected (all scopes granted, account matches)")
-    return redirect("/?connected=1", code=303)
+    return redirect("/settings?connected=1", code=303)
 
 
 @bp.post("/oauth/disconnect")
@@ -215,7 +215,7 @@ def disconnect():
     services = current_app.extensions["images2pdf"]
     store = services.token_store
     if store is None:
-        return redirect("/", code=303)
+        return redirect("/settings", code=303)
     try:
         grant = store.load()
     except (TokenUnreadable, OSError):
@@ -238,7 +238,7 @@ def disconnect():
             hint="https://myaccount.google.com/permissions",
             status=502,
         )
-    return redirect("/?disconnected=1", code=303)
+    return redirect("/settings?disconnected=1", code=303)
 
 
 # ─── קריאות לגוגל ─────────────────────────────────────────────

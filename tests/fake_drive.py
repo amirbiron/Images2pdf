@@ -38,6 +38,11 @@ def _validate_quoting(q: str) -> None:
         i += 1
 
 
+def _natural_key(name: str):
+    """מיון טבעי: 2 לפני 12 (כמו name_natural של דרייב)."""
+    return [(0, int(part), "") if part.isdigit() else (1, 0, part.casefold()) for part in re.split(r"(\d+)", name) if part]
+
+
 def _unescape(value: str) -> str:
     return re.sub(r"\\(.)", r"\1", value)
 
@@ -55,6 +60,7 @@ class FakeDrive:
         self.files_by_id: dict[str, dict] = {}
         self.queries: list[str] = []
         self.update_attempts: list[str] = []
+        self.batches: list[int] = []
 
     # ─── בנייה ───
     def add(self, name, mime=FOLDER, parent=None, *, owned=False, shared=True, can_edit=False, by_app=False, content=b""):
@@ -113,8 +119,10 @@ class FakeDrive:
                 items = [f for f in items if f["name"].casefold().startswith(needle)
                          or any(w.casefold().startswith(needle) for w in f["name"].split())]
             _validate_quoting(q)
-            if orderBy == "folder,name":  # תיקיות קודם, ואז לפי שם — כמו שהקוד מבקש מדרייב
-                items.sort(key=lambda f: (f["mimeType"] != FOLDER, f["name"]))
+            if orderBy in ("folder,name", "folder,name_natural"):  # תיקיות קודם, ואז לפי שם
+                items.sort(key=lambda f: (f["mimeType"] != FOLDER, _natural_key(f["name"])))
+            elif orderBy == "name_natural":
+                items.sort(key=lambda f: _natural_key(f["name"]))
             elif orderBy is not None:
                 raise AssertionError(f"unsupported orderBy in fake: {orderBy}")
             start = int(pageToken or 0)
@@ -125,6 +133,30 @@ class FakeDrive:
             return out
 
         return _Exec(run)
+
+    def new_batch_http_request(self, callback=None):
+        """כמו BatchHttpRequest של googleapiclient: add(request, request_id=...) ואז execute,
+        שקורא ל-callback(request_id, response, exception) לכל בקשה."""
+        drive = self
+
+        class _Batch:
+            def __init__(self):
+                self.items = []
+
+            def add(self, request, callback=None, request_id=None):
+                if any(rid == request_id for rid, _ in self.items):
+                    raise KeyError("request_id must be unique")
+                self.items.append((request_id, request))
+
+            def execute(self):
+                drive.batches.append(len(self.items))
+                for rid, request in self.items:
+                    try:
+                        callback(rid, request.execute(), None)
+                    except HttpError as exc:
+                        callback(rid, None, exc)
+
+        return _Batch()
 
     def create(self, body=None, media_body=None, fields=None, **kw):
         def run():

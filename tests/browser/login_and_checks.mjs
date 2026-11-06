@@ -34,7 +34,8 @@ writeFileSync(join(dataDir, "dev_checks_last.json"), JSON.stringify({
   checks: [{ num: 5, title: "התמונות הממוזערות מוצגות", status: "info", lines: [{ status: "info", text: "x" }] }],
   thumbnails: [
     { id: "imgOk1", name: "loads.png", direct: `${base}/static/logo.png`, direct_host_allowed: false },
-    { id: "imgBad2", name: "blocked.jpg", direct: "https://blocked.invalid/x.jpg", direct_host_allowed: false },
+    // מארח של גוגל (מותר ב-CSP), שהבקשה אליו נחסמת בבדיקה עם page.route
+    { id: "imgBad2", name: "blocked.jpg", direct: "https://lh3.googleusercontent.com/blocked-in-test", direct_host_allowed: true },
   ],
   thumbnail_report: null,
 }));
@@ -68,6 +69,7 @@ try {
   const page = await context.newPage();
   const cspViolations = [];
   page.on("console", (m) => { if (/Content Security Policy|Refused to/.test(m.text())) cspViolations.push(m.text()); });
+  await page.route("https://lh3.googleusercontent.com/**", (route) => route.abort());
 
   await page.goto(`${base}/dev/checks`);
   assert(page.url().startsWith(`${base}/login?next=/dev/checks`), "לא מחובר → מועבר לכניסה");
