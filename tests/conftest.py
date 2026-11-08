@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from config import load_settings  # noqa: E402
-from helpers import BASE_URL, PASSWORD, production_env  # noqa: E402
+from helpers import production_env, sign_in  # noqa: E402
 from web_app import create_app  # noqa: E402
 
 @pytest.fixture
@@ -44,7 +44,5 @@ def client(app):
 
 @pytest.fixture
 def logged_in(app):
-    c = app.test_client()
-    resp = c.post(f"{BASE_URL}/login", data={"password": PASSWORD, "next": "/"})
-    assert resp.status_code == 303
-    return c
+    """לקוח מחובר, אחרי שנבחרה סיסמה (המצב הרגיל של הכלי מאז שלב 4)."""
+    return sign_in(app, app.test_client())

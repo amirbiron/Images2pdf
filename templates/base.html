@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}{{ title|default("כלי PDF ללוקיישנים") }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {# קיצור דרך למסך הבית: display "browser" במניפסט, כדי שייפתח בדפדפן הרגיל (ראו /help) #}
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
 </head>
 <body>
   <header class="topbar">
@@ -12,9 +16,9 @@
     {% if show_nav is not defined or show_nav %}
     <nav class="nav" aria-label="ניווט ראשי">
       <a href="/">חיפוש</a>
+      <a href="/help">עזרה</a>
+      <a href="/password">סיסמה</a>
       <a href="/settings">חיבור לגוגל</a>
-      <a href="/dev/checks">בדיקות</a>
-      <a href="/dev/sample-pdf">PDF לדוגמה</a>
       <form method="post" action="/logout" class="inline-form"><button type="submit" class="link-button">יציאה</button></form>
     </nav>
     {% endif %}

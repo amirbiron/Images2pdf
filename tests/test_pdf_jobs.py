@@ -15,7 +15,7 @@ from urllib.parse import unquote
 
 import pytest
 from fake_drive import FakeDrive, _http_error
-from helpers import BASE_URL, PASSWORD
+from helpers import BASE_URL, sign_in
 from PIL import Image
 from pypdf import PdfReader
 
@@ -93,9 +93,7 @@ def _pdfs_in_drive(drive) -> list[dict]:
 
 
 def _client(app):
-    c = app.test_client()
-    assert c.post(f"{BASE_URL}/login", data={"password": PASSWORD}).status_code == 303
-    return c
+    return sign_in(app, app.test_client())
 
 
 # ─── הזרימה המלאה ────────────────────────────────────────────
@@ -244,16 +242,6 @@ def test_generation_lock_blocks_another_process(data_dir):
     finally:
         lock.release()
     assert GenerationLock(data_dir).is_free()
-
-
-def test_sample_page_and_picker_share_the_lock(app, logged_in, drive):
-    lock = GenerationLock(app.extensions["images2pdf"].settings.data_dir)
-    assert lock.try_acquire()
-    try:
-        assert logged_in.post(f"{BASE_URL}/api/pdf/jobs", json=_body(drive)).status_code == 409
-        assert logged_in.post(f"{BASE_URL}/dev/sample-pdf/run", data={"folder_id": drive.location}).status_code == 409
-    finally:
-        lock.release()
 
 
 # ─── עבודה שנקטעה ומצב "רצה" ─────────────────────────────────

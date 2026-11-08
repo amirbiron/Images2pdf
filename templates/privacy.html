@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}מדיניות פרטיות — כלי PDF ללוקיישנים{% endblock %}
+{% block main_class %}container prose{% endblock %}
+{% block content %}
+<p class="small"><a href="#en">English version below</a></p>
+<h1>מדיניות פרטיות — כלי PDF ללוקיישנים</h1>
+<p class="muted">עודכן לאחרונה: {{ updated_he }}</p>
+
+<h2>על השירות</h2>
+<p>כלי PDF ללוקיישנים הוא כלי פרטי שמאפשר למשתמש אחד, שאושר מראש, לבחור תמונות מתיקיות בגוגל דרייב שלו וליצור מהן קובץ PDF לשליחה. השירות לא פתוח להרשמה, והגישה אליו מוגנת בסיסמה.</p>
+
+<h2>איזו גישה לגוגל דרייב הכלי מבקש, ולמה</h2>
+<ul>
+  <li><strong>צפייה בקבצים בדרייב</strong> (drive.readonly): כדי לחפש תיקיות של לוקיישנים, להציג את התמונות שבהן, ולהוריד את התמונות שנבחרו כדי ליצור מהן את הקובץ. הכלי לא משנה ולא מוחק קבצים קיימים.</li>
+  <li><strong>קבצים שהכלי יצר</strong> (drive.file): כדי ליצור את התיקייה "קבצי PDF" ולשמור בה את הקבצים שהמשתמש יצר. ההרשאה הזו מאפשרת לכלי לכתוב רק לקבצים שהוא עצמו יצר.</li>
+</ul>
+<p>המידע מגוגל משמש רק להצגת התיקיות והתמונות ליצירת הקבצים שהמשתמש ביקש. הוא לא נמכר, לא משמש לפרסום, לא משמש לאימון מודלים, ולא מועבר לאף גורם.</p>
+
+<h2>מה נשמר בשרת, ולכמה זמן</h2>
+<ul>
+  <li>אסימון הגישה לגוגל (refresh token), מוצפן, וכתובת המייל של החשבון שחובר, כדי לוודא שחובר החשבון הנכון. נשמרים עד שמנתקים את החשבון או מבטלים את הגישה.</li>
+  <li>קבצי ה-PDF שנוצרו ופרטי היצירה (הכותרת, מזהה תיקיית הלוקיישן, ושמות של תמונות שלא נכנסו לקובץ): עד 24 שעות, ואז נמחקים.</li>
+  <li>עותקים זמניים של התמונות בזמן היצירה: נמחקים בסוף היצירה.</li>
+  <li>מזהה התיקייה "קבצי PDF" בדרייב.</li>
+  <li>סיסמת הכניסה, כ-hash ולא כטקסט, וזמני ניסיונות כניסה (לרבע שעה, להגבלת ניסיונות).</li>
+  <li>יומני שרת טכניים, בלי שמות קבצים ובלי כתובות מייל.</li>
+</ul>
+<p>בדפדפן נשמרת עוגיית כניסה, והבחירה הנוכחית נשמרת בלשונית בלבד. אין בכלי פרסומות ואין כלי מעקב או סטטיסטיקה.</p>
+
+<h2>עם מי המידע משותף</h2>
+<p>עם אף גורם, חוץ משניים שהשירות לא יכול לפעול בלעדיהם: <strong>Google</strong> (גוגל דרייב והחיבור לחשבון), ו-<strong>Render</strong>, שרת האחסון שמריץ את הכלי. כל אחד מהם כפוף למדיניות הפרטיות שלו.</p>
+
+<h2>איך מבטלים את הגישה</h2>
+<ul>
+  <li>בתוך הכלי: בעמוד "חיבור לגוגל" לוחצים "ניתוק החשבון". הכלי מבטל את הגישה אצל גוגל ומוחק את האסימון מהשרת.</li>
+  <li>בחשבון הגוגל: נכנסים ל-<a href="https://myaccount.google.com/linkedapps" dir="ltr">myaccount.google.com/linkedapps</a>, בוחרים את הכלי, ולוחצים על הסרת הגישה.</li>
+</ul>
+
+<h2>יצירת קשר</h2>
+{% if contact %}
+<p>שאלות, או בקשה למחיקת מידע: <a href="mailto:{{ contact }}" dir="ltr">{{ contact }}</a></p>
+{% else %}
+<p>שאלות, או בקשה למחיקת מידע: דרך מי שהקים את הכלי.</p>
+{% endif %}
+
+<hr>
+
+<section id="en" dir="ltr" lang="en" class="ltr-section">
+<h1>Privacy Policy — Location PDF Tool</h1>
+<p class="muted">Last updated: {{ updated_en }}</p>
+
+<h2>About the service</h2>
+<p>The Location PDF Tool is a private tool that lets a single pre-authorized user choose photos from folders in their own Google Drive and create a PDF file from them to send. The service is not open to registration, and access is protected by a password.</p>
+
+<h2>What Google Drive access the tool requests, and why</h2>
+<ul>
+  <li><strong>View files in Drive</strong> (drive.readonly): to search for location folders, show the photos in them, and download the selected photos to build the file. The tool does not change or delete existing files.</li>
+  <li><strong>Files the tool created</strong> (drive.file): to create the "קבצי PDF" (PDF files) folder and save the PDFs the user created. This permission only lets the tool write to files it created itself.</li>
+</ul>
+<p>Data from Google is used only to show folders and photos and to create the files the user asked for. It is not sold, not used for advertising, not used to train models, and not transferred to anyone.</p>
+
+<h2>What is stored on the server, and for how long</h2>
+<ul>
+  <li>The Google access token (refresh token), encrypted, and the email address of the connected account, to check that the right account was connected. Kept until the account is disconnected or access is revoked.</li>
+  <li>The PDF files created and their job details (title, the location folder ID, and names of photos that could not be included): up to 24 hours, then deleted.</li>
+  <li>Temporary copies of the photos while a file is being created: deleted when it is done.</li>
+  <li>The ID of the "קבצי PDF" folder in Drive.</li>
+  <li>The login password, as a hash and not as text, and the times of login attempts (for 15 minutes, to limit attempts).</li>
+  <li>Technical server logs, without file names and without email addresses.</li>
+</ul>
+<p>The browser keeps a login cookie, and the current selection is kept in the browser tab only. The tool has no ads and no tracking or analytics.</p>
+
+<h2>Who the data is shared with</h2>
+<p>No one, except the two services the tool cannot run without: <strong>Google</strong> (Google Drive and account sign-in), and <strong>Render</strong>, the hosting server that runs the tool. Each is governed by its own privacy policy.</p>
+
+<h2>How to revoke access</h2>
+<ul>
+  <li>In the tool: on the "Google connection" page, choose "Disconnect account". The tool revokes access at Google and deletes the token from the server.</li>
+  <li>In your Google Account: go to <a href="https://myaccount.google.com/linkedapps">myaccount.google.com/linkedapps</a>, choose the tool, and remove its access.</li>
+</ul>
+
+<h2>Contact</h2>
+{% if contact %}
+<p>Questions, or a request to delete data: <a href="mailto:{{ contact }}">{{ contact }}</a></p>
+{% else %}
+<p>Questions, or a request to delete data: through the person who set up the tool.</p>
+{% endif %}
+</section>
+{% endblock %}

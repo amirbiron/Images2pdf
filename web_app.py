@@ -1,7 +1,7 @@
 """
 web_app.py — אפליקציית Flask של כלי ה-PDF ללוקיישנים.
 
-שלב 0: כניסה עם סיסמה, חיבור לגוגל בדפדפן, והדף /dev/checks.
+כניסה עם סיסמה, חיבור לגוגל בדפדפן, הבורר ויצירת PDF.
 """
 
 from __future__ import annotations
@@ -14,11 +14,9 @@ from flask import Flask, current_app, g, jsonify, render_template, request
 from google.auth.exceptions import RefreshError
 
 import auth
-import dev_checks
 import oauth
 import pdf_jobs
 import picker_api
-import sample_pdf
 import thumbnails
 from config import Settings, load_settings
 from google_api import GoogleNotConnected, forget_cached_clients, refresh_error_kind
@@ -26,6 +24,7 @@ from login_limiter import LoginLimiter
 from pdf_builder import TITLE_MAX_CHARS
 from pdf_job import MAX_IMAGES
 from oauth_state import OAuthStateStore
+from password_store import PasswordStore
 from storage import data_dir_problem
 from token_store import TokenStore, TokenUnreadable
 
@@ -53,6 +52,7 @@ class Services:
     token_store: TokenStore | None
     state_store: OAuthStateStore
     login_limiter: LoginLimiter
+    password_store: PasswordStore | None
 
 
 def _configure_logging() -> None:
@@ -82,6 +82,8 @@ def create_app(settings: Settings | None = None) -> Flask:
         token_store=token_store,
         state_store=OAuthStateStore(settings.data_dir),
         login_limiter=LoginLimiter(settings.data_dir),
+        # בלי WEB_PANEL_SECRET השירות חסום ממילא (auth.gate), ואין ממה לגזור סיסמה חד-פעמית.
+        password_store=PasswordStore(settings.data_dir, settings.panel_secret) if settings.panel_secret else None,
     )
 
     app.before_request(auth.gate)
@@ -90,15 +92,16 @@ def create_app(settings: Settings | None = None) -> Flask:
 
     app.register_blueprint(auth.bp)
     app.register_blueprint(oauth.bp)
-    app.register_blueprint(dev_checks.bp)
     app.register_blueprint(thumbnails.bp)
-    app.register_blueprint(sample_pdf.bp)
     app.register_blueprint(picker_api.bp)
     app.register_blueprint(pdf_jobs.bp)
 
     app.add_url_rule("/healthz", "healthz", healthz)
     app.add_url_rule("/", "index", index)
     app.add_url_rule("/settings", "settings", settings_page)
+    app.add_url_rule("/help", "help", help_page)
+    # ציבורי (auth.PUBLIC_ENDPOINTS): גוגל דורשת קישור למדיניות פרטיות שפתוח לכולם.
+    app.add_url_rule("/privacy", "privacy", privacy_page)
 
     app.register_error_handler(RefreshError, _on_refresh_error)
     app.register_error_handler(GoogleNotConnected, _on_not_connected)
@@ -202,6 +205,7 @@ def _settings_response(status: dict, problems: list[str]):
         redirect_uri=oauth.redirect_uri(),
         just_connected=request.args.get("connected") == "1",
         just_disconnected=request.args.get("disconnected") == "1",
+        password_set=request.args.get("password") == "set",
     )
 
 
@@ -209,8 +213,24 @@ def index():
     """המסך הראשון הוא חיפוש לוקיישן (ROADMAP). בלי חיבור לגוגל — דף החיבור."""
     status, problems = _connection_status()
     if not problems and status["state"] == "connected":
-        return render_template("picker.html", max_images=MAX_IMAGES, title_max=TITLE_MAX_CHARS)
+        return render_template("picker.html", max_images=MAX_IMAGES, title_max=TITLE_MAX_CHARS,
+                               password_set=request.args.get("password") == "set")
     return _settings_response(status, problems)
+
+
+def help_page():
+    return render_template("help.html")
+
+
+def privacy_page():
+    settings = current_app.extensions["images2pdf"].settings
+    return render_template(
+        "privacy.html",
+        contact=settings.privacy_contact_email,
+        updated_he="נובמבר 2026",
+        updated_en="November 2026",
+        show_nav=False,
+    )
 
 
 def settings_page():

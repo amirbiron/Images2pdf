@@ -25,7 +25,7 @@ from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload, MediaIoBaseUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
 from config import DRIVE_SCOPES, GOOGLE_TOKEN_URL, is_valid_drive_id
 from token_store import StoredGrant, TokenStore, TokenUnreadable
@@ -322,21 +322,6 @@ def drive_create_folder(name: str, parent_id: str | None = None) -> dict:
     if parent_id is not None:
         body["parents"] = [parent_id]
     return get_drive_service().files().create(body=body, fields="id, name, webViewLink").execute()
-
-
-def drive_upload_bytes(name: str, data: bytes, mimetype: str, parent_id: str) -> dict:
-    media = MediaIoBaseUpload(io.BytesIO(data), mimetype=mimetype, resumable=False)
-    return (
-        get_drive_service()
-        .files()
-        .create(
-            body={"name": name, "parents": [parent_id]},
-            media_body=media,
-            fields="id, name, size, parents, webViewLink",
-            supportsAllDrives=True,
-        )
-        .execute()
-    )
 
 
 # ─── הורדה ────────────────────────────────────────────────────

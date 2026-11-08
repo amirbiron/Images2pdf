@@ -7,9 +7,12 @@
   {% if error %}<p class="alert alert-error" role="alert">{{ error }}</p>{% endif %}
   <form method="post" action="/login" class="stack">
     <input type="hidden" name="next" value="{{ next }}">
-    <label for="password">סיסמה</label>
-    <input type="password" id="password" name="password" autocomplete="current-password" maxlength="1024" required autofocus>
+    {# שם משתמש קבוע ונסתר, כדי שמנהל הסיסמאות של הדפדפן ישמור ויעדכן רשומה אחת #}
+    <input type="text" name="username" value="{{ username }}" autocomplete="username" hidden>
+    <label for="current-password">סיסמה</label>
+    <input type="password" id="current-password" name="password" autocomplete="current-password" maxlength="1024" required autofocus>
     <button type="submit" class="button">כניסה</button>
   </form>
+  <p class="muted small">שכחתם את הסיסמה? מבקשים סיסמה זמנית חדשה ממי שהקים את הכלי.</p>
 </section>
 {% endblock %}

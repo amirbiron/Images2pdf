@@ -67,29 +67,18 @@ input:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid 
 .alert-error { background: var(--err-bg); color: var(--err-text); }
 .list { padding-inline-start: 22px; }
 
-.check { border-block-start: 1px solid var(--border); padding-block: 14px; }
-.lines { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
-.line { display: flex; gap: 8px; align-items: baseline; }
-.line-text { overflow-wrap: anywhere; }
-.badge { display: inline-block; min-width: 3.4em; text-align: center; font-size: 0.8rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; flex-shrink: 0; }
-.badge-pass { background: var(--ok-bg); color: var(--ok-text); }
-.badge-warn { background: var(--warn-bg); color: var(--warn-text); }
-.badge-fail { background: var(--err-bg); color: var(--err-text); }
-.badge-info { background: var(--info-bg); color: var(--info-text); }
-
-.table-wrap { overflow-x: auto; }
-.thumbs { border-collapse: collapse; width: 100%; margin-block-start: 12px; }
-.thumbs th, .thumbs td { border: 1px solid var(--border); padding: 8px; text-align: start; vertical-align: top; }
-.thumbs .name { max-width: 220px; overflow-wrap: anywhere; }
-.thumbs .cell { min-width: 120px; }
-.thumbs img.thumb { display: block; max-width: 110px; max-height: 110px; margin-block-end: 4px; }
-.ok { color: var(--ok-text); font-weight: 600; }
-.bad { color: var(--err-text); font-weight: 600; }
-.cell-none { color: var(--muted); }
-
-.metrics { border-collapse: collapse; width: 100%; max-width: 640px; }
-.metrics th, .metrics td { border: 1px solid var(--border); padding: 8px 10px; text-align: start; }
-.metrics th { font-weight: 600; width: 45%; background: #faf9f6; }
+/* ─── עמודי טקסט: עזרה ופרטיות. שורה קצרה ונוחה לקריאה בטלפון. ─── */
+.prose { max-width: 720px; }
+.prose h2 { margin-block-start: 28px; }
+.prose p, .prose li { line-height: 1.7; }
+.prose ul, .prose ol { padding-inline-start: 22px; }
+.prose li { margin-block-end: 6px; }
+.prose section { scroll-margin-top: 12px; }
+.toc { display: flex; flex-wrap: wrap; gap: 4px 6px; font-size: 0.95rem; margin-block-end: 8px; }
+.small { font-size: 0.9rem; }
+/* שם של כפתור או הגדרה באנגלית ("Open as Web App") לא נשבר באמצע: כך קל לזהות אותו במסך. */
+.prose bdi { white-space: nowrap; }
+.ltr-section { text-align: left; }
 
 /* ═══ הבורר (שלב 2) ═══════════════════════════════════════════
    טלפון קודם: פס בחירה קבוע בתחתית. מ-1024px: לוח צד קבוע ליד הרשת. */
@@ -162,7 +151,7 @@ input[type="search"] {
 .tile-image img.thumb-broken + .tile-name { opacity: 1; inset: 0; display: flex; align-items: center; justify-content: center; white-space: normal; }
 .tile.selected { border-color: var(--accent); }
 .tile.selected img { opacity: 0.88; }
-/* מספר הסדר של תמונה שנבחרה. שם משלו: .badge הוא תווית הסטטוס של /dev/checks. */
+/* מספר הסדר של תמונה שנבחרה. */
 .order-badge {
   position: absolute; top: 6px; inset-inline-start: 6px; min-width: 28px; height: 28px; padding: 0 6px;
   display: grid; place-items: center; border-radius: 999px; background: var(--accent); color: #fff;
@@ -196,8 +185,7 @@ input[type="search"] {
 .title-field label { flex-shrink: 0; font-weight: 600; font-size: 0.92rem; }
 .title-field input { flex: 1; min-width: 0; font-size: 1rem; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; min-height: 44px; }
 .button.create { flex-shrink: 0; white-space: nowrap; }
-/* רק כפתור היצירה: הכלל הכללי `.button:disabled` (סמן "המתנה") משמש את form_wait.js
-   בשליחת טפסים, ואסור לדרוס אותו. */
+/* רק כפתור היצירה; הכלל הכללי `.button:disabled` נשאר לכפתורים אחרים. */
 .button.create:disabled { opacity: 0.5; cursor: not-allowed; }
 .picker.on-location { padding-block-end: 200px; }
 

@@ -32,3 +32,6 @@ services:
         sync: false
       - key: ALLOWED_GOOGLE_EMAIL
         sync: false
+      # כתובת ליצירת קשר בדף הפרטיות הציבורי (/privacy), שגוגל דורשת לפני In production.
+      - key: PRIVACY_CONTACT_EMAIL
+        sync: false

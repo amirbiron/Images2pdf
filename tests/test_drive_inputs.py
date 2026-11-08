@@ -101,33 +101,3 @@ def test_list_folder_only_folders_and_images(monkeypatch):
     q = captured["q"]
     assert "'abc123' in parents" in q
     assert "image/jpeg" in q and "image/png" in q and "video" not in q
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        None,
-        "string",
-        {"results": "x"},
-        {"results": [{"id": "../x", "direct": True}]},
-        {"results": [{"id": "abc", "direct": "yes"}]},
-        {"results": [{"id": "abc"}] * 51},
-    ],
-)
-def test_thumbnail_report_validates_input(logged_in, payload):
-    resp = logged_in.post(f"{BASE_URL}/dev/checks/thumbnail-report", json=payload)
-    assert resp.status_code == 400
-
-
-def test_thumbnail_report_accepts_valid_payload(logged_in):
-    resp = logged_in.post(
-        f"{BASE_URL}/dev/checks/thumbnail-report",
-        json={"results": [{"id": "abc", "direct": False, "direct_no_referrer": None, "proxy": True}]},
-    )
-    assert resp.status_code == 200
-    assert resp.get_json()["summary"]["proxy"] == {"ok": 1, "failed": 0}
-
-
-def test_run_rejects_invalid_folder_id(logged_in):
-    resp = logged_in.post(f"{BASE_URL}/dev/checks/run", data={"folder_id": "x' or 1=1"})
-    assert resp.status_code == 400

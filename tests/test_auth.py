@@ -6,7 +6,7 @@ import threading
 from html.parser import HTMLParser
 
 import pytest
-from helpers import BASE_URL, PASSWORD
+from helpers import BASE_URL, CHOSEN_PASSWORD, PASSWORD, seed_password
 
 from auth import COOKIE_NAME
 
@@ -27,7 +27,7 @@ class _FormParser(HTMLParser):
 
 
 def _login_form(client) -> dict:
-    page = client.get(f"{BASE_URL}/login?next=/dev/checks")
+    page = client.get(f"{BASE_URL}/login?next=/settings")
     assert page.status_code == 200
     parser = _FormParser()
     parser.feed(page.get_data(as_text=True))
@@ -36,22 +36,35 @@ def _login_form(client) -> dict:
     return forms[0]
 
 
-def test_login_through_the_rendered_form_sets_hardened_cookie(client):
+def _submit(client, form, password):
+    """שולח את הטופס כמו הדפדפן: השדות הנסתרים כמו שהם, והסיסמה בשדה הסיסמה."""
+    password_field = next(n for n, i in form["inputs"].items() if i["type"] == "password")
+    data = {n: i["value"] for n, i in form["inputs"].items() if i["type"] in ("hidden", "text")}
+    data[password_field] = password
+    return client.post(f"{BASE_URL}{form['action']}", data=data)
+
+
+def test_login_through_the_rendered_form_sets_hardened_cookie(app, client):
+    seed_password(app)
     form = _login_form(client)
     assert form["method"] == "post"
-    password_field = next(n for n, i in form["inputs"].items() if i["type"] == "password")
-    data = {n: i["value"] for n, i in form["inputs"].items() if i["type"] == "hidden"}
-    data[password_field] = PASSWORD
-
-    resp = client.post(f"{BASE_URL}{form['action']}", data=data)
+    resp = _submit(client, form, CHOSEN_PASSWORD)
     assert resp.status_code == 303
-    assert resp.headers["Location"] == "/dev/checks"
+    assert resp.headers["Location"] == "/settings"
     cookie = resp.headers["Set-Cookie"]
     assert cookie.startswith(f"{COOKIE_NAME}=")
     assert "Secure" in cookie and "HttpOnly" in cookie and "SameSite=Lax" in cookie
-    assert PASSWORD.encode("utf-8").hex() not in cookie  # העוגייה היא HMAC, לא הסיסמה
+    assert CHOSEN_PASSWORD.encode("utf-8").hex() not in cookie  # העוגייה היא HMAC, לא הסיסמה
 
-    assert client.get(f"{BASE_URL}/dev/checks").status_code == 200
+    assert client.get(f"{BASE_URL}/settings").status_code == 200
+
+
+def test_first_login_with_the_env_password_leads_to_choosing_a_password(client):
+    resp = _submit(client, _login_form(client), PASSWORD)
+    assert resp.status_code == 303 and resp.headers["Location"] == "/password/setup"
+    assert client.get(f"{BASE_URL}/settings").headers["Location"] == "/password/setup"  # אי אפשר להשתמש בכלי לפני הבחירה
+    api = client.get(f"{BASE_URL}/api/drive/search?q=abc")
+    assert api.status_code == 403 and api.get_json() == {"error": "password_setup_required"}
 
 
 def test_password_never_travels_in_the_url(client):
@@ -75,7 +88,7 @@ def test_overlong_password_is_refused_not_truncated(client):
 def test_missing_or_invalid_secret_blocks_everything(make_app, secret):
     app = make_app(WEB_PANEL_SECRET=secret)
     c = app.test_client()
-    for path in ("/", "/login", "/dev/checks", "/oauth/callback?state=x"):
+    for path in ("/", "/login", "/settings", "/password", "/help", "/oauth/callback?state=x"):
         assert c.get(f"{BASE_URL}{path}").status_code == 503, path
     assert c.post(f"{BASE_URL}/login", data={"password": "anything"}).status_code == 503
     api = c.get(f"{BASE_URL}/api/drive/thumbnail/abc")
@@ -85,8 +98,9 @@ def test_missing_or_invalid_secret_blocks_everything(make_app, secret):
 
 
 def test_unauthenticated_requests(client):
-    resp = client.get(f"{BASE_URL}/dev/checks")
-    assert resp.status_code == 302 and resp.headers["Location"].startswith("/login?next=/dev/checks")
+    for path in ("/settings", "/help", "/password", "/password/setup"):
+        resp = client.get(f"{BASE_URL}{path}")
+        assert resp.status_code == 302 and resp.headers["Location"].startswith(f"/login?next={path}"), path
     api = client.get(f"{BASE_URL}/api/drive/thumbnail/abc")
     assert api.status_code == 401 and api.get_json() == {"error": "unauthorized"}
     assert client.get(f"{BASE_URL}/oauth/callback?state=x&code=y").status_code == 302
@@ -94,14 +108,20 @@ def test_unauthenticated_requests(client):
 
 
 def test_static_prefix_does_not_open_protected_routes(client):
-    resp = client.get(f"{BASE_URL}/static/../dev/checks")
+    resp = client.get(f"{BASE_URL}/static/../settings")
     assert resp.status_code != 200
-    assert "בדיקות שלב 0" not in resp.get_data(as_text=True)
+    assert "חיבור לגוגל דרייב" not in resp.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("path", ["/dev/checks", "/dev/sample-pdf"])
+def test_dev_pages_are_gone(logged_in, path):
+    assert logged_in.get(f"{BASE_URL}{path}").status_code == 404
 
 
 @pytest.mark.parametrize("target", ["//evil.example", "/\\evil.example", "https://evil.example/", "javascript:alert(1)"])
-def test_next_cannot_redirect_off_site(client, target):
-    resp = client.post(f"{BASE_URL}/login", data={"password": PASSWORD, "next": target})
+def test_next_cannot_redirect_off_site(app, client, target):
+    seed_password(app)
+    resp = client.post(f"{BASE_URL}/login", data={"password": CHOSEN_PASSWORD, "next": target})
     assert resp.status_code == 303
     assert resp.headers["Location"] == "/"
 
