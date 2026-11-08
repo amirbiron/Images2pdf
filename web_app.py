@@ -24,7 +24,7 @@ from login_limiter import LoginLimiter
 from pdf_builder import TITLE_MAX_CHARS
 from pdf_job import MAX_IMAGES
 from oauth_state import OAuthStateStore
-from password_store import PasswordStore
+from password_store import PasswordStorageError, PasswordStore
 from storage import data_dir_problem
 from token_store import TokenStore, TokenUnreadable
 
@@ -85,6 +85,14 @@ def create_app(settings: Settings | None = None) -> Flask:
         # בלי WEB_PANEL_SECRET השירות חסום ממילא (auth.gate), ואין ממה לגזור סיסמה חד-פעמית.
         password_store=PasswordStore(settings.data_dir, settings.panel_secret) if settings.panel_secret else None,
     )
+
+    # רישום איפוס של WEB_PANEL_SECRET מיד עם העלייה (Render מעלה את השירות מחדש אחרי כל
+    # שמירה של משתנה). כשל לא מפיל את העלייה: הכניסה עצמה תיחסם ותציג הודעה.
+    if app.extensions["images2pdf"].password_store is not None and disk is None:
+        try:
+            app.extensions["images2pdf"].password_store.current()
+        except PasswordStorageError:
+            logger.error("Password storage is not usable at startup; login stays blocked until it is fixed")
 
     app.before_request(auth.gate)
     app.before_request(_check_origin)

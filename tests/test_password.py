@@ -156,12 +156,25 @@ def test_change_password_keeps_this_device_and_signs_out_the_others(app):
     assert by_name["username"]["autocomplete"] == "username"
 
     resp = _submit(here, form, current_password=CHOSEN_PASSWORD, new_password=NEW_PASSWORD, confirm_password=NEW_PASSWORD)
-    assert resp.status_code == 200 and "הסיסמה הוחלפה" in resp.get_data(as_text=True)
+    assert resp.status_code == 303 and resp.headers["Location"] == "/password?changed=1"
     assert COOKIE_NAME in resp.headers["Set-Cookie"]
+    assert "הסיסמה הוחלפה" in here.get(f"{BASE_URL}/password?changed=1").get_data(as_text=True)
     assert here.get(f"{BASE_URL}/settings").status_code == 200
     assert elsewhere.get(f"{BASE_URL}/settings").status_code == 302
 
     assert app.test_client().post(f"{BASE_URL}/login", data={"password": CHOSEN_PASSWORD}).status_code == 401
+    assert app.test_client().post(f"{BASE_URL}/login", data={"password": NEW_PASSWORD}).status_code == 303
+
+
+def test_refreshing_the_success_page_does_not_resend_the_old_password(app, logged_in):
+    """אחרי ההחלפה הדפדפן מגיע לדף ההצלחה ב-GET. רענון שלו לא שולח שוב את הטופס, ולכן לא
+    מציג "הסיסמה הנוכחית שגויה" ולא נספר כניסיון כושל."""
+    resp = logged_in.post(f"{BASE_URL}/password", data={
+        "current_password": CHOSEN_PASSWORD, "new_password": NEW_PASSWORD, "confirm_password": NEW_PASSWORD})
+    assert resp.status_code == 303
+    for _ in range(12):  # יותר ממכסת הניסיונות: אם זה היה נספר, הכניסה הבאה הייתה חסומה
+        page = logged_in.get(f"{BASE_URL}{resp.headers['Location']}")
+        assert page.status_code == 200 and "הסיסמה הוחלפה" in page.get_data(as_text=True)
     assert app.test_client().post(f"{BASE_URL}/login", data={"password": NEW_PASSWORD}).status_code == 303
 
 
@@ -202,6 +215,19 @@ def test_changing_the_env_secret_resets_to_a_new_one_time_password(make_app):
     assert other.get(f"{BASE_URL}/settings").status_code == 302
 
 
+def test_going_back_to_the_old_env_secret_does_not_revive_the_reset_password(make_app):
+    """החלפה ל-X2 ואז חזרה ל-X1, בלי שאף אחד נכנס בינתיים: האיפוס נרשם כבר בעליית השרת,
+    ולכן הסיסמה שאופסה לא חוזרת, ו-X1 הוא שוב סיסמה חד-פעמית."""
+    first = make_app()
+    seed_password(first)
+    make_app(WEB_PANEL_SECRET="ערך-אחר-לגמרי-55")  # רק עלייה של השרת עם הערך החדש
+    back = make_app()  # חזרה לערך הקודם
+    c = back.test_client()
+    assert c.post(f"{BASE_URL}/login", data={"password": CHOSEN_PASSWORD}).status_code == 401
+    resp = c.post(f"{BASE_URL}/login", data={"password": PASSWORD})
+    assert resp.status_code == 303 and resp.headers["Location"] == "/password/setup"
+
+
 def test_without_a_reset_the_chosen_password_survives_a_restart(make_app):
     first = make_app()
     seed_password(first)
@@ -238,6 +264,54 @@ def test_damaged_password_file_blocks_login(app, client, content):
     for password in (PASSWORD, CHOSEN_PASSWORD):
         resp = client.post(f"{BASE_URL}/login", data={"password": password})
         assert resp.status_code == 503, password
+
+
+@pytest.mark.parametrize("field", ["env_hash", "env_salt", "hash", "salt", "session_key"])
+def test_a_field_of_the_wrong_length_is_damage_not_a_reset(app, client, field):
+    """טביעה פגומה (למשל קצרה מדי) לא מתפרשת כ"WEB_PANEL_SECRET הוחלף", שהיה מחזיר לתוקף את
+    הסיסמה הזמנית. כל שדה באורך שאינו בדיוק מה שהקוד כותב — חסימה."""
+    seed_password(app)
+    path = app.extensions["images2pdf"].settings.data_dir / "password.json"
+    rec = json.loads(path.read_text())
+    rec[field] = "AAAA"  # base64 תקין, 3 בתים
+    path.write_text(json.dumps(rec))
+    for password in (PASSWORD, CHOSEN_PASSWORD):
+        assert client.post(f"{BASE_URL}/login", data={"password": password}).status_code == 503, password
+
+
+def test_a_deleted_password_file_blocks_instead_of_reopening_the_one_time_password(make_app):
+    app = make_app()
+    seed_password(app)
+    data_dir = app.extensions["images2pdf"].settings.data_dir
+    assert (data_dir / "password.initialized").exists()
+    (data_dir / "password.json").unlink()
+    c = app.test_client()
+    for password in (PASSWORD, CHOSEN_PASSWORD):
+        assert c.post(f"{BASE_URL}/login", data={"password": password}).status_code == 503, password
+    # הדרך לצאת: אותו איפוס כמו תמיד, ערך חדש ב-WEB_PANEL_SECRET
+    reset = make_app(WEB_PANEL_SECRET="ערך-חדש-אחרי-מחיקה-1")
+    resp = reset.test_client().post(f"{BASE_URL}/login", data={"password": "ערך-חדש-אחרי-מחיקה-1"})
+    assert resp.status_code == 303 and resp.headers["Location"] == "/password/setup"
+
+
+@pytest.mark.parametrize("route", ["setup", "change"])
+def test_a_disk_write_failure_is_a_clear_503_not_a_500(app, monkeypatch, route):
+    import password_store
+
+    def broken(path, data):
+        raise OSError("disk full")
+
+    if route == "setup":
+        c = _login_env(app.test_client())
+        monkeypatch.setattr(password_store, "atomic_write_bytes", broken)
+        resp = c.post(f"{BASE_URL}/password/setup", data={"new_password": CHOSEN_PASSWORD, "confirm_password": CHOSEN_PASSWORD})
+    else:
+        c = sign_in(app, app.test_client())
+        monkeypatch.setattr(password_store, "atomic_write_bytes", broken)
+        resp = c.post(f"{BASE_URL}/password", data={
+            "current_password": CHOSEN_PASSWORD, "new_password": NEW_PASSWORD, "confirm_password": NEW_PASSWORD})
+    assert resp.status_code == 503 and "אי אפשר להיכנס כרגע" in resp.get_data(as_text=True)
+    assert COOKIE_NAME not in resp.headers.get("Set-Cookie", "")  # העוגייה הקיימת לא הוחלפה
 
 
 def test_damaged_file_also_locks_out_existing_sessions(app, logged_in):

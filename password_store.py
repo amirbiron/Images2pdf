@@ -9,8 +9,10 @@ password_store.py — סיסמת הכניסה שהמשתמש בחר, וכניס�
   לא חוזרים לסיסמה מ-WEB_PANEL_SECRET: קובץ פגום היה פותח שוב את הדלת לסיסמה הישנה.
 
 איפוס בלי טרמינל: לצד הסיסמה נשמרת "טביעה" של הערך של WEB_PANEL_SECRET מהרגע שבו היא
-נבחרה. כשמחליפים את הערך ב-Render, הטביעה לא מתאימה, הסיסמה השמורה מתבטלת, והערך החדש
-הוא שוב סיסמה חד-פעמית.
+נבחרה. כשמחליפים את הערך ב-Render, הטביעה לא מתאימה, והאיפוס נרשם בקובץ (ולא רק מחושב):
+הסיסמה השמורה מתבטלת לצמיתות, והערך החדש הוא שוב סיסמה חד-פעמית. גם חזרה לערך קודם היא
+החלפה, ולא מחזירה לתוקף את הסיסמה שאופסה. הבדיקה רצה גם בעליית השרת (web_app.create_app),
+כך שהאיפוס נרשם גם אם אף אחד לא נכנס בין ההחלפה לחזרה.
 
 "מחובר" נקבע לפי מפתח אקראי (session_key) שנשמר עם הסיסמה. העוגייה נגזרת ממנו, ובכל
 החלפת סיסמה נוצר מפתח חדש — כך כל המכשירים האחרים צריכים להיכנס מחדש.
@@ -27,6 +29,7 @@ password_store.py — סיסמת הכניסה שהמשתמש בחר, וכניס�
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import hmac
 import json
@@ -38,6 +41,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 
 from storage import atomic_write_bytes, data_dir_problem, file_lock
 
@@ -95,91 +99,172 @@ def _unb64(value: object) -> bytes:
     return base64.b64decode(value, validate=True)
 
 
+# אורכים מדויקים, כמו שהקוד כותב אותם. כל אורך אחר הוא קובץ פגום, ולא "WEB_PANEL_SECRET
+# הוחלף": טביעה פגומה שהייתה נקראת כהחלפה הייתה מחזירה לתוקף את הסיסמה הזמנית.
+SALT_BYTES = 16
+HASH_BYTES = _DKLEN
+SESSION_KEY_BYTES = 32
+MARKER_NAME = "password.initialized"
+
+
 @dataclass(frozen=True)
 class StoredPassword:
     salt: bytes
     hash: bytes
-    env_salt: bytes
-    env_hash: bytes
     session_key: bytes
     changed_at: str
 
 
+@dataclass(frozen=True)
+class _Fingerprint:
+    """טביעה (scrypt) של ערך WEB_PANEL_SECRET. מאפשרת לזהות שהערך הוחלף, בלי לשמור אותו."""
+
+    salt: bytes
+    hash: bytes
+
+
+@dataclass(frozen=True)
+class _Record:
+    """תוכן password.json: סיסמה שנבחרה ("password"), או איפוס ("reset") — אחרי שהערך של
+    WEB_PANEL_SECRET הוחלף, ועד שנבחרת סיסמה חדשה. שניהם קשורים לערך שבתוקף כשנכתבו."""
+
+    kind: str
+    env: _Fingerprint
+    password: StoredPassword | None
+
+
+def _exact(value: object, length: int) -> bytes:
+    data = _unb64(value)
+    if len(data) != length:
+        raise ValueError("wrong length")
+    return data
+
+
 class PasswordStore:
+    """הקבצים בתיקיית הנתונים:
+
+    - password.json: הסיסמה שנבחרה, או רשומת איפוס. מרגע שנוצר הוא לא נמחק, רק מוחלף.
+    - password.initialized: סימן שהכלי כבר הוגדר, עם טביעת הערך של WEB_PANEL_SECRET שהיה בתוקף
+      בכתיבה האחרונה. אם password.json נעלם והערך לא הוחלף מאז — הכניסה נחסמת, ולא חוזרת
+      לסיסמה הזמנית. הדרך לצאת מזה היא אותה דרך איפוס: להחליף את WEB_PANEL_SECRET.
+
+    כל החלפה של WEB_PANEL_SECRET נרשמת בקובץ (רשומת איפוס), ולא רק מחושבת בכל בקשה. כך החזרה
+    לערך קודם לא מחזירה לתוקף את הסיסמה שאופסה: היא נחשבת להחלפה נוספת, והערך הוא שוב חד-פעמי.
+
+    ערוץ כשל אחד: כל תקלת דיסק או קובץ פגום הן PasswordStorageError.
+    """
+
     def __init__(self, data_dir: Path, env_secret: str) -> None:
         self._data_dir = data_dir
         self._path = data_dir / FILE_NAME
+        self._marker_path = data_dir / MARKER_NAME
         self._lock_path = data_dir / ".password.lock"
         self._env_secret = env_secret
         self._cache_lock = threading.Lock()
-        self._cache: tuple[tuple[int, int, int], StoredPassword | None] | None = None
-        # האם הטביעה בקובץ מתאימה לערך הנוכחי של WEB_PANEL_SECRET. הערך הזה קבוע בתהליך
-        # (משתנה סביבה), ולכן מחשבים פעם אחת לכל טביעה, ולא scrypt בכל בקשה.
+        self._cache: tuple[tuple[int, int, int], _Record] | None = None
+        # האם טביעה מתאימה לערך הנוכחי של WEB_PANEL_SECRET. הערך קבוע בתהליך (משתנה סביבה),
+        # ולכן מחשבים פעם אחת לכל טביעה, ולא scrypt בכל בקשה.
         self._env_match: dict[tuple[bytes, bytes], bool] = {}
 
-    # ─── קריאה ────────────────────────────────────────────────
+    # ─── המצב ─────────────────────────────────────────────────
 
     def current(self) -> StoredPassword | None:
         """הסיסמה השמורה, או None במצב setup. זורק PasswordStorageError בתקלה."""
+        return self._resolve(locked=False)
+
+    def _resolve(self, *, locked: bool) -> StoredPassword | None:
         if data_dir_problem(self._data_dir) is not None:
             raise PasswordStorageError("data directory is not usable")
+        record = self._load()
+        if record is None:
+            marker = self._load_marker()
+            if marker is None:
+                return None  # כניסה ראשונה אמיתית: הכלי עוד לא הוגדר
+            if self._matches_env(marker):
+                logger.error("The password file is missing although a password was set; login is blocked")
+                raise PasswordStorageError("password file is missing")
+            self._reset(locked=locked)  # הקובץ חסר, אבל WEB_PANEL_SECRET הוחלף מאז: זה איפוס
+            return None
+        if not self._matches_env(record.env):
+            self._reset(locked=locked)
+            return None
+        return record.password  # None ברשומת איפוס: הערך הנוכחי הוא סיסמה חד-פעמית
+
+    def _matches_env(self, fp: _Fingerprint) -> bool:
+        key = (fp.salt, fp.hash)
+        with self._cache_lock:
+            known = self._env_match.get(key)
+        if known is None:
+            known = hmac.compare_digest(_kdf(self._env_secret, fp.salt), fp.hash)
+            with self._cache_lock:
+                self._env_match[key] = known
+        return known
+
+    # ─── קריאה ────────────────────────────────────────────────
+
+    def _load(self) -> _Record | None:
         try:
             st = os.stat(self._path)
         except FileNotFoundError:
             return None
         except OSError as exc:
+            logger.error("The password file cannot be read; login is blocked until it is fixed")
             raise PasswordStorageError("cannot stat the password file") from exc
         version = (st.st_mtime_ns, st.st_ino, st.st_size)
         with self._cache_lock:
             if self._cache is not None and self._cache[0] == version:
                 return self._cache[1]
-        stored = self._read()
-        with self._cache_lock:
-            self._cache = (version, stored)
-        return stored
-
-    def _read(self) -> StoredPassword | None:
         try:
             data = json.loads(self._path.read_bytes())
         except FileNotFoundError:
-            return None  # נמחק בין stat לקריאה: מצב setup
+            return None  # הוחלף בין stat לקריאה (os.replace); הקריאה הבאה תראה את החדש
         except (OSError, ValueError) as exc:
             logger.error("The password file cannot be read; login is blocked until it is fixed")
             raise PasswordStorageError("unreadable password file") from exc
         try:
-            if not isinstance(data, dict) or data.get("v") != 1 or data.get("kdf") != "scrypt":
-                raise ValueError("unknown format")
-            if any(data.get(k) != v for k, v in _KDF.items()):
-                raise ValueError("unknown parameters")
-            stored = StoredPassword(
-                salt=_unb64(data["salt"]),
-                hash=_unb64(data["hash"]),
-                env_salt=_unb64(data["env_salt"]),
-                env_hash=_unb64(data["env_hash"]),
-                session_key=_unb64(data["session_key"]),
-                changed_at=str(data.get("changed_at", "")),
-            )
+            record = self._parse(data)
         except (KeyError, ValueError, TypeError) as exc:
             logger.error("The password file is malformed; login is blocked until it is fixed")
             raise PasswordStorageError("malformed password file") from exc
-        if len(stored.session_key) < 32 or len(stored.salt) < 16 or len(stored.env_salt) < 16:
-            logger.error("The password file is malformed; login is blocked until it is fixed")
-            raise PasswordStorageError("malformed password file")
-        if not self._matches_env(stored):
-            return None
-        return stored
-
-    def _matches_env(self, stored: StoredPassword) -> bool:
-        key = (stored.env_salt, stored.env_hash)
         with self._cache_lock:
-            known = self._env_match.get(key)
-        if known is None:
-            known = hmac.compare_digest(_kdf(self._env_secret, stored.env_salt), stored.env_hash)
-            with self._cache_lock:
-                self._env_match[key] = known
-            if not known:
-                logger.warning("WEB_PANEL_SECRET was changed: the stored password is void, the new value is one-time")
-        return known
+            self._cache = (version, record)
+        return record
+
+    @staticmethod
+    def _parse(data: object) -> _Record:
+        if not isinstance(data, dict) or data.get("v") != 1 or data.get("kdf") != "scrypt":
+            raise ValueError("unknown format")
+        if any(data.get(k) != v for k, v in _KDF.items()):
+            raise ValueError("unknown parameters")
+        env = _Fingerprint(salt=_exact(data["env_salt"], SALT_BYTES), hash=_exact(data["env_hash"], HASH_BYTES))
+        kind = data.get("kind")
+        if kind == "reset":
+            return _Record(kind="reset", env=env, password=None)
+        if kind != "password":
+            raise ValueError("unknown kind")
+        password = StoredPassword(
+            salt=_exact(data["salt"], SALT_BYTES),
+            hash=_exact(data["hash"], HASH_BYTES),
+            session_key=_exact(data["session_key"], SESSION_KEY_BYTES),
+            changed_at=str(data.get("changed_at", "")),
+        )
+        return _Record(kind="password", env=env, password=password)
+
+    def _load_marker(self) -> _Fingerprint | None:
+        try:
+            data = json.loads(self._marker_path.read_bytes())
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError) as exc:
+            logger.error("The password marker cannot be read; login is blocked until it is fixed")
+            raise PasswordStorageError("unreadable password marker") from exc
+        try:
+            if not isinstance(data, dict) or data.get("v") != 1:
+                raise ValueError("unknown format")
+            return _Fingerprint(salt=_exact(data["env_salt"], SALT_BYTES), hash=_exact(data["env_hash"], HASH_BYTES))
+        except (KeyError, ValueError, TypeError) as exc:
+            logger.error("The password marker is malformed; login is blocked until it is fixed")
+            raise PasswordStorageError("malformed password marker") from exc
 
     # ─── בדיקה ─────────────────────────────────────────────────
 
@@ -193,52 +278,96 @@ class PasswordStore:
 
     # ─── כתיבה ─────────────────────────────────────────────────
 
+    @contextlib.contextmanager
+    def _lock(self) -> Iterator[None]:
+        with contextlib.ExitStack() as stack:
+            try:
+                stack.enter_context(file_lock(self._lock_path))
+            except OSError as exc:
+                logger.error("Could not lock the password file", exc_info=True)
+                raise PasswordStorageError("cannot lock the password file") from exc
+            yield
+
     def set_initial(self, new_password: str) -> StoredPassword:
         """הבחירה הראשונה, אחרי כניסה עם הסיסמה החד-פעמית. אטומי: בתוך נעילה בודקים שעדיין
         אין סיסמה בתוקף. שני מכשירים שבוחרים באותו רגע — רק אחד מצליח (PasswordAlreadySet)."""
-        with file_lock(self._lock_path):
-            if self.current() is not None:
+        with self._lock():
+            if self._resolve(locked=True) is not None:
                 raise PasswordAlreadySet()
-            stored = self._write(new_password)
+            stored = self._write_password(new_password)
         logger.info("A password was chosen; the one-time password no longer works")
         return stored
 
     def change(self, current_password: str, new_password: str) -> StoredPassword:
         """החלפה עם הסיסמה הנוכחית. מפתח חדש, ולכן מכשירים אחרים מתנתקים."""
-        with file_lock(self._lock_path):
-            stored = self.current()
+        with self._lock():
+            stored = self._resolve(locked=True)
             if stored is None or not self.verify(stored, current_password):
                 raise WrongPassword()
-            new = self._write(new_password)
+            new = self._write_password(new_password)
         logger.info("The password was changed; other devices must sign in again")
         return new
 
-    def _write(self, new_password: str) -> StoredPassword:
+    def _reset(self, *, locked: bool) -> None:
+        """רושם שהערך של WEB_PANEL_SECRET הוחלף: הסיסמה השמורה מבוטלת לצמיתות."""
+        if locked:
+            self._write_reset()
+            return
+        with self._lock():
+            # בדיקה חוזרת בתוך הנעילה: worker אחר אולי כבר רשם את האיפוס, או שכבר נבחרה סיסמה.
+            record = self._load()
+            if record is not None and self._matches_env(record.env):
+                return
+            self._write_reset()
+
+    def _write_reset(self) -> None:
+        env = self._fingerprint_now()
+        self._write_state({"kind": "reset", "reset_at": _now()}, env)
+        logger.warning("WEB_PANEL_SECRET was changed: the stored password is void, the new value is one-time")
+
+    def _write_password(self, new_password: str) -> StoredPassword:
         problem = password_problem(new_password)
         if problem:
             raise ValueError(problem)
-        salt, env_salt = secrets.token_bytes(16), secrets.token_bytes(16)
+        salt = secrets.token_bytes(SALT_BYTES)
         stored = StoredPassword(
             salt=salt,
             hash=_kdf(new_password, salt),
-            env_salt=env_salt,
-            env_hash=_kdf(self._env_secret, env_salt),
-            session_key=secrets.token_bytes(32),
-            changed_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            session_key=secrets.token_bytes(SESSION_KEY_BYTES),
+            changed_at=_now(),
         )
-        record = {
-            "v": 1,
-            "kdf": "scrypt",
-            **_KDF,
+        fields = {
+            "kind": "password",
             "salt": _b64(stored.salt),
             "hash": _b64(stored.hash),
-            "env_salt": _b64(stored.env_salt),
-            "env_hash": _b64(stored.env_hash),
             "session_key": _b64(stored.session_key),
             "changed_at": stored.changed_at,
         }
-        atomic_write_bytes(self._path, json.dumps(record).encode("utf-8"))  # זורק OSError בכשל
+        self._write_state(fields, self._fingerprint_now())
+        return stored
+
+    def _fingerprint_now(self) -> _Fingerprint:
+        salt = secrets.token_bytes(SALT_BYTES)
+        return _Fingerprint(salt=salt, hash=_kdf(self._env_secret, salt))
+
+    def _write_state(self, fields: dict, env: _Fingerprint) -> None:
+        record = {"v": 1, "kdf": "scrypt", **_KDF, "env_salt": _b64(env.salt), "env_hash": _b64(env.hash), **fields}
+        try:
+            atomic_write_bytes(self._path, json.dumps(record).encode("utf-8"))
+        except OSError as exc:
+            logger.error("Could not save the password file", exc_info=True)
+            raise PasswordStorageError("cannot write the password file") from exc
+        marker = {"v": 1, "env_salt": _b64(env.salt), "env_hash": _b64(env.hash)}
+        try:
+            atomic_write_bytes(self._marker_path, json.dumps(marker).encode("utf-8"))
+        except OSError:
+            # הסיסמה עצמה נשמרה ותקינה. בלי הסימן, רק ההגנה מפני password.json שנעלם נחלשת:
+            # קובץ שייעלם ייחשב לכניסה ראשונה. לכן תיעוד בלוג ולא כישלון של הבחירה.
+            logger.error("Could not save the password marker", exc_info=True)
         with self._cache_lock:
             self._cache = None
-            self._env_match[(stored.env_salt, stored.env_hash)] = True
-        return stored
+            self._env_match[(env.salt, env.hash)] = True
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")

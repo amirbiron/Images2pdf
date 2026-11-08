@@ -307,7 +307,7 @@ def password_change():
     """החלפת סיסמה, עם הסיסמה הנוכחית. המכשיר הזה נשאר מחובר, ושאר המכשירים מתנתקים."""
     ctx = _password_page(error=None, done=False)
     if request.method == "GET":
-        return render_template("password_change.html", **ctx)
+        return render_template("password_change.html", **{**ctx, "done": request.args.get("changed") == "1"})
     current = request.form.get("current_password")
     if not isinstance(current, str) or current == "":
         return render_template("password_change.html", **{**ctx, "error": "צריך להקליד את הסיסמה הנוכחית."}), 400
@@ -328,7 +328,9 @@ def password_change():
     except PasswordStorageError:
         return _storage_blocked_response()
     current_app.extensions["images2pdf"].login_limiter.release_success(ticket)
-    resp = make_response(render_template("password_change.html", **{**ctx, "done": True}))
+    # הפניה (POST ← redirect ← GET): רענון של דף ההצלחה לא שולח שוב את הסיסמה הישנה, שהייתה
+    # נכשלת ונספרת כניסיון שגוי. כמו אחרי בחירת סיסמה.
+    resp = make_response(redirect("/password?changed=1", code=303))
     _set_cookie(resp, full_cookie_value(stored.session_key))
     return resp
 
