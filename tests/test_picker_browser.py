@@ -27,7 +27,7 @@ import httplib2
 import pytest
 from fake_drive import FakeDrive
 from googleapiclient.errors import HttpError
-from helpers import PASSWORD, production_env
+from helpers import production_env, seed_password
 from PIL import Image
 from werkzeug.serving import make_server
 
@@ -197,7 +197,7 @@ def test_picker_in_real_browser(data_dir, tmp_path, monkeypatch):
         shots.mkdir(parents=True, exist_ok=True)
         args = {
             "base": base,
-            "cookie": auth._cookie_token(PASSWORD),
+            "cookie": auth.full_cookie_value(seed_password(app).session_key),
             "cookieName": auth.COOKIE_NAME,
             "directPng": str(sample_png),
             "shots": str(shots),

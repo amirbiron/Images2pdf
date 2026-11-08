@@ -20,7 +20,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import pytest
-from helpers import PASSWORD
+from helpers import CHOSEN_PASSWORD
 
 ROOT = Path(__file__).resolve().parent.parent
 GUNICORN = shutil.which("gunicorn", path=str(Path(sys.executable).parent)) or shutil.which("gunicorn")
@@ -72,7 +72,7 @@ def test_job_finishes_and_saves_to_drive_after_the_client_disconnects(tmp_path):
 
         # כניסה (ב-production העוגייה Secure; כאן שולחים אותה ידנית ב-HTTP)
         status, headers, _ = _request(
-            port, "POST", "/login", body=urlencode({"password": PASSWORD}),
+            port, "POST", "/login", body=urlencode({"password": CHOSEN_PASSWORD}),
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         assert status == 303

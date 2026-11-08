@@ -101,9 +101,10 @@ class Settings:
     allowed_google_email: str | None
     public_base_url: str | None
     data_dir: Path
-    dev_sample_folder_id: str | None
     # תיאורים בעברית של מה שחסר כדי לחבר את גוגל. ריק = אפשר לחבר.
     google_problems: tuple[str, ...]
+    # כתובת ליצירת קשר בדף הפרטיות הציבורי. ממשתנה סביבה, כדי שבריפו לא יהיו פרטי הלקוח.
+    privacy_contact_email: str | None = None
 
     @property
     def google_configured(self) -> bool:
@@ -182,10 +183,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
     data_dir = Path(_read(env, "DATA_DIR") or "/var/data")
 
-    sample = _read(env, "DEV_SAMPLE_FOLDER_ID")
-    if sample is not None and not is_valid_drive_id(sample):
-        logger.warning("DEV_SAMPLE_FOLDER_ID is not a valid Drive id; ignoring it")
-        sample = None
+    privacy_contact = _read(env, "PRIVACY_CONTACT_EMAIL")
+    if privacy_contact is not None and (len(privacy_contact) > 254 or _EMAIL_RE.fullmatch(privacy_contact) is None):
+        logger.warning("PRIVACY_CONTACT_EMAIL does not look like an email address; the privacy page shows no address")
+        privacy_contact = None
 
     if problems:
         logger.warning("Google connection is not configured: %d problem(s)", len(problems))
@@ -200,6 +201,6 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         allowed_google_email=allowed_email,
         public_base_url=public_base_url,
         data_dir=data_dir,
-        dev_sample_folder_id=sample,
         google_problems=tuple(problems),
+        privacy_contact_email=privacy_contact,
     )

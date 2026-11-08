@@ -5,7 +5,7 @@ thumbnails.py — /api/drive/thumbnail/<file_id>: תמונה ממוזערת דר
 applications due to CORS policies. Consider using a proxy server." וגם: "If the
 file isn't shared publicly, the URL ... must be fetched using a credentialed
 request." מקור: https://developers.google.com/workspace/drive/api/reference/rest/v3/files
-בדיקה 5 ב-/dev/checks קובעת אם צריך את הנתיב הזה בפועל (ROADMAP, טבלת השינויים).
+בבורר, תמונה שהקישור הישיר שלה נחסם עוברת לנתיב הזה (ROADMAP, שלב 2).
 
 ההבדלים מ-`api_drive_thumbnail` המקורי: אין בדיקת תיקיית שורש ואין מסלול גיבוי
 שקורא גיליון; הטוקן נלקח מה-Credentials שלנו ולא מ-`svc._http` (שדה פרטי);

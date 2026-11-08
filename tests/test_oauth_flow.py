@@ -191,9 +191,9 @@ def test_disconnect_reports_failed_revoke_honestly(app, logged_in, google):
 def test_google_setup_missing_blocks_start(make_app):
     app = make_app(GOOGLE_CLIENT_ID=None)
     c = app.test_client()
-    from helpers import PASSWORD
+    from helpers import sign_in
 
-    c.post(f"{BASE_URL}/login", data={"password": PASSWORD})
+    sign_in(app, c)
     resp = c.post(f"{BASE_URL}/oauth/start")
     assert resp.status_code == 503
     assert "GOOGLE_CLIENT_ID" in resp.get_data(as_text=True)

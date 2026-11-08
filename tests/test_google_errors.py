@@ -38,6 +38,20 @@ def token_server(monkeypatch):
     google_api.forget_cached_clients()
 
 
+@pytest.fixture
+def page_app(make_app):
+    """אפליקציה עם דף HTML שקורא לדרייב, כדי לבדוק את מסלול ה-HTML של כשל הרשאה.
+    (דף כזה היה /dev/checks, שהוסר בשלב 4. הנתיב קיים רק בבדיקה.)"""
+    app = make_app()
+
+    def drive_page():
+        google_api.get_drive_service().about().get(fields="user(emailAddress)").execute()
+        return "ok"
+
+    app.add_url_rule("/_test/drive-page", "test_drive_page", drive_page)
+    return app
+
+
 def _raise_from_real_library(app) -> RefreshError:
     with app.test_request_context("/"):
         with pytest.raises(RefreshError) as info:
@@ -63,10 +77,13 @@ def test_classification_matches_library_exceptions(app, token_server, response, 
     assert token_server["calls"][0]["refresh_token"] == "1//refresh"
 
 
-def test_invalid_grant_disconnects_and_shows_reconnect(app, logged_in, token_server):
+def test_invalid_grant_disconnects_and_shows_reconnect(page_app, token_server):
+    from helpers import sign_in
+
+    app = page_app
     store = app.extensions["images2pdf"].token_store
     store.save(GRANT)
-    resp = logged_in.post(f"{BASE_URL}/dev/checks/run", data={"folder_id": "abcDEF123_-"})
+    resp = sign_in(app, app.test_client()).get(f"{BASE_URL}/_test/drive-page")
     assert resp.status_code == 401
     body = resp.get_data(as_text=True)
     assert "צריך לחבר מחדש" in body and 'action="/oauth/start"' in body
@@ -87,17 +104,22 @@ def test_invalid_grant_on_api_route_is_json(app, logged_in, token_server):
         ((False, {"error": "internal_failure"}, True), 503),
     ],
 )
-def test_other_refresh_failures_keep_the_grant(app, logged_in, token_server, response, status):
+def test_other_refresh_failures_keep_the_grant(page_app, token_server, response, status):
+    from helpers import sign_in
+
+    app = page_app
     store = app.extensions["images2pdf"].token_store
     store.save(GRANT)
     token_server["value"] = response
-    resp = logged_in.post(f"{BASE_URL}/dev/checks/run", data={"folder_id": "abcDEF123_-"})
+    resp = sign_in(app, app.test_client()).get(f"{BASE_URL}/_test/drive-page")
     assert resp.status_code == status
     assert store.load() == GRANT
 
 
-def test_not_connected_shows_connect_screen(logged_in):
-    resp = logged_in.post(f"{BASE_URL}/dev/checks/run", data={"folder_id": "abcDEF123_-"})
+def test_not_connected_shows_connect_screen(page_app):
+    from helpers import sign_in
+
+    resp = sign_in(page_app, page_app.test_client()).get(f"{BASE_URL}/_test/drive-page")
     assert resp.status_code == 409
     assert 'action="/oauth/start"' in resp.get_data(as_text=True)
 
@@ -106,10 +128,12 @@ def test_unreadable_grant_asks_to_reconnect(make_app, data_dir):
     first = make_app()
     first.extensions["images2pdf"].token_store.save(GRANT)
     app = make_app(TOKEN_ENCRYPTION_KEY="z" * 44)  # המפתח הוחלף
+    app.add_url_rule("/_test/drive-page", "test_drive_page",
+                     lambda: google_api.get_drive_service().about().get(fields="user").execute() and "ok")
     c = app.test_client()
-    from helpers import PASSWORD
+    from helpers import sign_in
 
-    c.post(f"{BASE_URL}/login", data={"password": PASSWORD})
-    resp = c.post(f"{BASE_URL}/dev/checks/run", data={"folder_id": "abcDEF123_-"})
+    sign_in(app, c)
+    resp = c.get(f"{BASE_URL}/_test/drive-page")
     assert resp.status_code == 409
     assert "TOKEN_ENCRYPTION_KEY" in resp.get_data(as_text=True)

@@ -4,6 +4,7 @@
 {% block content %}
 <div id="picker" class="picker" data-max="{{ max_images }}">
 
+  {% if password_set %}<p class="alert alert-ok" role="status">הסיסמה נשמרה. מעכשיו נכנסים איתה.</p>{% endif %}
   <section id="screen-search" class="screen" aria-labelledby="search-heading">
     <h1 id="search-heading" class="visually-hidden">חיפוש לוקיישן</h1>
     <form id="search-form" class="search-bar" role="search">

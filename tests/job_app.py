@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fake_drive import FakeDrive  # noqa: E402
-from helpers import production_env  # noqa: E402
+from helpers import production_env, seed_password  # noqa: E402
 from PIL import Image  # noqa: E402
 
 import google_api  # noqa: E402
@@ -50,6 +50,7 @@ app = create_app(load_settings(production_env(Path(os.environ["DATA_DIR"]))))
 app.extensions["images2pdf"].token_store.save(
     StoredGrant("1//r", "owner@example.com", ("a",), "2026-11-06T00:00:00+00:00")
 )
+seed_password(app)  # כאילו המשתמש כבר בחר סיסמה; הבדיקה נכנסת עם CHOSEN_PASSWORD
 
 
 def _ids(environ, start_response):
