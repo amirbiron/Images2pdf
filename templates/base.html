@@ -9,13 +9,14 @@
   <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='icons/icon-192.png') }}">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+  {% block head_extra %}{% endblock %}
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="/"><img src="{{ url_for('static', filename='logo.png') }}" alt="" class="brand-logo"><span>כלי PDF ללוקיישנים</span></a>
     {% if show_nav is not defined or show_nav %}
     <nav class="nav" aria-label="ניווט ראשי">
-      <a href="/">חיפוש</a>
+      <a href="/app">חיפוש</a>
       <a href="/help">עזרה</a>
       <a href="/password">סיסמה</a>
       <a href="/settings">חיבור לגוגל</a>

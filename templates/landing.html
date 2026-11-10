@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}images2pdf — יצירת PDF מתמונות בגוגל דרייב{% endblock %}
+{% block head_extra %}
+  <meta name="description" content="images2pdf: בוחרים תמונות מתיקיות בגוגל דרייב ויוצרים מהן קובץ PDF. Create a PDF from photos in your Google Drive folders.">
+  {% if site_verification %}<meta name="google-site-verification" content="{{ site_verification }}">{% endif %}
+{% endblock %}
+{% block main_class %}container prose landing{% endblock %}
+{% block content %}
+<h1 class="landing-name">images2pdf</h1>
+<p class="landing-lead">בוחרים תמונות מתיקיות בגוגל דרייב, ומקבלים מהן קובץ PDF מסודר לשליחה.</p>
+
+<div class="landing-actions">
+  <a class="button" href="/app">כניסה לאפליקציה</a>
+  <a class="button button-secondary" href="/privacy">מדיניות פרטיות</a>
+</div>
+
+<h2>מה הכלי עושה</h2>
+<ul>
+  <li>מחפשים תיקייה של לוקיישן בגוגל דרייב, ורואים את התמונות שבה ואת תתי-התיקיות שלה.</li>
+  <li>בוחרים עד 12 תמונות, לפי הסדר הרצוי.</li>
+  <li>הכלי יוצר קובץ PDF עם התמונות, כותרת וקישור לתיקייה, שומר אותו בדרייב בתיקייה "קבצי PDF", ומציע אותו להורדה ולשיתוף.</li>
+</ul>
+
+<h2>הגישה לגוגל דרייב</h2>
+<p>הכלי מבקש צפייה בקבצים בדרייב, כדי לחפש תיקיות ולהציג ולהוריד את התמונות שנבחרו, וגישה רק לקבצים שהוא עצמו יוצר, כדי לשמור את קבצי ה-PDF. הוא לא משנה ולא מוחק תמונות. הפרטים ב<a href="/privacy">מדיניות הפרטיות</a>.</p>
+<p class="muted">זה כלי פרטי למשתמש מורשה אחד, והכניסה אליו מוגנת בסיסמה.</p>
+
+<hr>
+
+<section dir="ltr" lang="en" class="ltr-section">
+  <h2>images2pdf</h2>
+  <p>images2pdf lets an authorized user choose photos from folders in their own Google Drive and create a PDF file from them to send.</p>
+  <ul>
+    <li>Search for a location folder in Google Drive and browse its photos and subfolders.</li>
+    <li>Choose up to 12 photos, in the order you want.</li>
+    <li>The tool creates a PDF with the photos, a title and a link to the folder, saves it to a "קבצי PDF" (PDF files) folder in Drive, and offers it for download and sharing.</li>
+  </ul>
+  <p>The tool requests read-only access to files in Drive (to find folders and to show and download the selected photos), and access only to the files it creates itself (to save the PDFs). It does not change or delete photos. See the <a href="/privacy">privacy policy</a> for details.</p>
+  <p><a href="/app">Sign in to the app</a> · <a href="/privacy">Privacy policy</a></p>
+</section>
+{% endblock %}

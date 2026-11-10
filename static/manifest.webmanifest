@@ -3,7 +3,7 @@
   "short_name": "PDF לוקיישנים",
   "lang": "he",
   "dir": "rtl",
-  "start_url": "/",
+  "start_url": "/app",
   "scope": "/",
   "display": "browser",
   "background_color": "#ffffff",

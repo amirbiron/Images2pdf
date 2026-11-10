@@ -37,9 +37,22 @@ try {
   await noOverflow("פרטיות");
   await page.screenshot({ path: join(args.shots, `${vp}-privacy.png`) });
 
-  // 2. כניסה ראשונה עם הסיסמה מ-WEB_PANEL_SECRET → מסך בחירת סיסמה
+  // 2. דף הבית הציבורי (לאימות ה-Branding של גוגל): שם האפליקציה, תיאור, פרטיות וכניסה
+  resp = await page.goto(args.base + "/");
+  assert(resp.status() === 200 && new URL(page.url()).pathname === "/", `${vp}: דף הבית נפתח בלי כניסה ובלי הפניה`);
+  assert((await page.title()).includes("images2pdf") && (await page.textContent("h1")) === "images2pdf", `${vp}: images2pdf בכותרת וב-<title>`);
+  assert(await page.isVisible('.landing-actions a[href="/privacy"]') && await page.isVisible('.landing-actions a[href="/app"]'),
+    `${vp}: קישורים בולטים לפרטיות ולכניסה`);
+  await noOverflow("דף הבית");
+  await page.screenshot({ path: join(args.shots, `${vp}-home.png`), fullPage: true });
+  await page.click('.landing-actions a[href="/privacy"]');
+  assert(new URL(page.url()).pathname === "/privacy", `${vp}: הקישור לפרטיות עובד בלי כניסה`);
   await page.goto(args.base + "/");
-  assert(page.url().startsWith(args.base + "/login"), `${vp}: בלי כניסה — מסך הכניסה`);
+
+  // 3. "כניסה לאפליקציה" → מסך הכניסה → כניסה ראשונה עם הסיסמה מ-WEB_PANEL_SECRET → בחירת סיסמה
+  await page.click('.landing-actions a[href="/app"]');
+  await page.waitForURL((u) => u.pathname === "/login" && u.searchParams.get("next") === "/app");
+  assert(true, `${vp}: "כניסה לאפליקציה" מוביל למסך הכניסה, עם חזרה לאפליקציה`);
   await noOverflow("כניסה");
   await page.fill("#current-password", args.envPassword);
   await Promise.all([page.waitForURL("**/password/setup"), page.click("button[type=submit]")]);
@@ -55,7 +68,7 @@ try {
   assert((await page.textContent(".alert-error")).includes("לפחות 8"), `${vp}: סיסמה קצרה מ-8 נדחית עם הסבר`);
   await page.fill("#new-password", CHOSEN);
   await page.fill("#confirm-password", CHOSEN);
-  await Promise.all([page.waitForURL((u) => u.pathname === "/"), page.click("form[action='/password/setup'] button[type=submit]")]);
+  await Promise.all([page.waitForURL((u) => u.pathname === "/app"), page.click("form[action='/password/setup'] button[type=submit]")]);
   assert((await page.textContent("main")).includes("הסיסמה נשמרה"), `${vp}: אחרי הבחירה — "הסיסמה נשמרה"`);
 
   // 4. התפריט: עזרה וסיסמה, בלי דפי פיתוח, ובלי גלילה לרוחב בטלפון
@@ -81,7 +94,7 @@ try {
   const otherPage = await other.newPage();
   await otherPage.goto(args.base + "/login");
   await otherPage.fill("#current-password", CHOSEN);
-  await Promise.all([otherPage.waitForURL((u) => u.pathname === "/"), otherPage.click("button[type=submit]")]);
+  await Promise.all([otherPage.waitForURL((u) => u.pathname === "/app"), otherPage.click("button[type=submit]")]);
   await page.goto(args.base + "/password");
   const ac = await page.$$eval("form[action='/password'] input", (is) => is.map((i) => `${i.name}:${i.autocomplete}`));
   assert(ac.includes("current_password:current-password") && ac.includes("new_password:new-password") && ac.includes("username:username"),

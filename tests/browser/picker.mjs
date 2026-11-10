@@ -45,7 +45,7 @@ try {
     };
 
     // 1. מסך החיפוש הוא המסך הראשון
-    await page.goto(args.base + "/");
+    await page.goto(args.base + "/app");
     assert(await page.isVisible("#search-input"), `${vp.name}: מסך החיפוש הוא המסך הראשון`);
 
     // 2. חיפוש עם גרש, וחלק ממילה שנייה בשם

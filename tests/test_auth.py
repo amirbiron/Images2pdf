@@ -88,7 +88,7 @@ def test_overlong_password_is_refused_not_truncated(client):
 def test_missing_or_invalid_secret_blocks_everything(make_app, secret):
     app = make_app(WEB_PANEL_SECRET=secret)
     c = app.test_client()
-    for path in ("/", "/login", "/settings", "/password", "/help", "/oauth/callback?state=x"):
+    for path in ("/app", "/login", "/settings", "/password", "/help", "/oauth/callback?state=x"):
         assert c.get(f"{BASE_URL}{path}").status_code == 503, path
     assert c.post(f"{BASE_URL}/login", data={"password": "anything"}).status_code == 503
     api = c.get(f"{BASE_URL}/api/drive/thumbnail/abc")
@@ -123,14 +123,14 @@ def test_next_cannot_redirect_off_site(app, client, target):
     seed_password(app)
     resp = client.post(f"{BASE_URL}/login", data={"password": CHOSEN_PASSWORD, "next": target})
     assert resp.status_code == 303
-    assert resp.headers["Location"] == "/"
+    assert resp.headers["Location"] == "/app"
 
 
 def test_logout_clears_cookie(logged_in):
     resp = logged_in.post(f"{BASE_URL}/logout")
     assert resp.status_code == 303
     assert f"{COOKIE_NAME}=;" in resp.headers["Set-Cookie"]
-    assert logged_in.get(f"{BASE_URL}/").status_code == 302
+    assert logged_in.get(f"{BASE_URL}/app").status_code == 302
 
 
 def test_rate_limit_holds_under_parallel_attempts(app):
