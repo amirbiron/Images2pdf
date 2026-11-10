@@ -160,7 +160,7 @@
 
   function showError(node, err) {
     if (err.code === "unauthorized") {
-      window.location.href = "/login?next=" + encodeURIComponent("/" + window.location.hash);
+      window.location.href = "/login?next=" + encodeURIComponent(window.location.pathname + window.location.hash);
       return;
     }
     if (err.code === "google_reconnect_required") {
@@ -1090,7 +1090,7 @@
   window.addEventListener("online", resumeJob);
 
   function goToLogin() {
-    window.location.href = "/login?next=" + encodeURIComponent("/" + window.location.hash);
+    window.location.href = "/login?next=" + encodeURIComponent(window.location.pathname + window.location.hash);
   }
 
   // ─── התחלה ─────────────────────────────────────────────────

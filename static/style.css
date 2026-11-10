@@ -79,6 +79,11 @@ input:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid 
 /* שם של כפתור או הגדרה באנגלית ("Open as Web App") לא נשבר באמצע: כך קל לזהות אותו במסך. */
 .prose bdi { white-space: nowrap; }
 .ltr-section { text-align: left; }
+/* דף הבית הציבורי */
+.landing-name { font-size: 2.2rem; margin-block: 8px 4px; }
+.landing-lead { font-size: 1.15rem; margin-block: 0 16px; }
+.landing-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-block: 8px 20px; }
+.landing-actions .button { min-width: 180px; }
 
 /* ═══ הבורר (שלב 2) ═══════════════════════════════════════════
    טלפון קודם: פס בחירה קבוע בתחתית. מ-1024px: לוח צד קבוע ליד הרשת. */

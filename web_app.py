@@ -10,7 +10,7 @@ import logging
 import sys
 from dataclasses import dataclass
 
-from flask import Flask, current_app, g, jsonify, render_template, request
+from flask import Flask, current_app, g, jsonify, redirect, render_template, request
 from google.auth.exceptions import RefreshError
 
 import auth
@@ -105,7 +105,9 @@ def create_app(settings: Settings | None = None) -> Flask:
     app.register_blueprint(pdf_jobs.bp)
 
     app.add_url_rule("/healthz", "healthz", healthz)
-    app.add_url_rule("/", "index", index)
+    # / הוא דף בית ציבורי (גוגל דורש דף בית בלי כניסה, עם שם האפליקציה), והכלי ב-/app.
+    app.add_url_rule("/", "home", home_page)
+    app.add_url_rule(auth.APP_PATH, "index", index)
     app.add_url_rule("/settings", "settings", settings_page)
     app.add_url_rule("/help", "help", help_page)
     # ציבורי (auth.PUBLIC_ENDPOINTS): גוגל דורשת קישור למדיניות פרטיות שפתוח לכולם.
@@ -217,8 +219,25 @@ def _settings_response(status: dict, problems: list[str]):
     )
 
 
+def home_page():
+    """דף הבית הציבורי: מה הכלי עושה, וקישורים לכניסה ולמדיניות הפרטיות.
+
+    מי שכבר מחובר ממשיך ישר לכלי, כדי שסימניות וקיצורי דרך ישנים ל-/ ימשיכו לעבוד.
+    הבודקים של גוגל לא מחוברים, ולכן רואים את הדף. הדף לא תלוי בדיסק או בהגדרות:
+    is_authenticated מחזיר False כשאי אפשר לקרוא את הסיסמה, והדף מוצג כרגיל.
+    """
+    if auth.is_authenticated():
+        return redirect(auth.APP_PATH, code=302)
+    settings = current_app.extensions["images2pdf"].settings
+    return render_template(
+        "landing.html",
+        site_verification=settings.google_site_verification,
+        show_nav=False,
+    )
+
+
 def index():
-    """המסך הראשון הוא חיפוש לוקיישן (ROADMAP). בלי חיבור לגוגל — דף החיבור."""
+    """הכלי: חיפוש לוקיישן (ROADMAP), ב-/app. בלי חיבור לגוגל — דף החיבור."""
     status, problems = _connection_status()
     if not problems and status["state"] == "connected":
         return render_template("picker.html", max_images=MAX_IMAGES, title_max=TITLE_MAX_CHARS,

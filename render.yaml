@@ -35,3 +35,7 @@ services:
       # כתובת ליצירת קשר בדף הפרטיות הציבורי (/privacy), שגוגל דורשת לפני In production.
       - key: PRIVACY_CONTACT_EMAIL
         sync: false
+      # הערך של תגית האימות של Google Search Console (שיטת HTML tag), לדף הבית הציבורי.
+      # אפשר להדביק את הערך בלבד או את כל התגית.
+      - key: GOOGLE_SITE_VERIFICATION
+        sync: false

@@ -41,8 +41,15 @@
 - שומרים עם "Save and deploy".
 - אחרי שהפריסה מסתיימת, פותחים את https://images2pdf-ih9g.onrender.com/privacy בחלון גלישה פרטית: הדף צריך להיפתח בלי כניסה, עם הכתובת.
 
-**3. (אני) Branding ב-Google Cloud, לפני In production.** בעמוד https://console.developers.google.com/auth/branding, בחלק App domain:
-- **Application home page:** `https://images2pdf-ih9g.onrender.com`
+**3א. (אני) אימות הבעלות על הכתובת ב-Google Search Console.** גוגל דורשת לאמת ב-Search Console את הבעלות על הדומיינים שב-Branding, עם חשבון גוגל שהוא בעלים של הפרויקט ב-Google Cloud. הכלי מציג את תגית האימות בדף הבית הציבורי, מתוך משתנה סביבה.
+- ב-https://search.google.com/search-console לוחצים Add property, ובוחרים **URL prefix** (ולא Domain), עם הכתובת `https://images2pdf-ih9g.onrender.com/`. לפי גוגל, שיטת HTML tag עובדת רק לנכס מסוג URL prefix, ונכס Domain דורש גישה ל-DNS, שאין לנו ב-`onrender.com`.
+- בוחרים בשיטה **HTML tag** ומעתיקים את התגית.
+- ב-Render, בעמוד Environment, מוסיפים את `GOOGLE_SITE_VERIFICATION` עם מה שהועתק. אפשר להדביק את כל התגית או רק את הערך שבתוך `content`. שומרים עם "Save and deploy".
+- אחרי שהפריסה מסתיימת, לוחצים Verify ב-Search Console.
+- **משאירים את המשתנה גם אחרי האימות.** לפי גוגל, Search Console בודקת מדי פעם שהתגית עדיין שם.
+
+**3ב. (אני) Branding ב-Google Cloud, לפני In production.** בעמוד https://console.developers.google.com/auth/branding, בחלק App domain:
+- **Application home page:** `https://images2pdf-ih9g.onrender.com` — דף בית ציבורי, עם השם images2pdf בכותרת, תיאור של הכלי וקישור למדיניות הפרטיות. גוגל דורשת דף בית שפתוח בלי כניסה, ושיש בו תיאור של מה שהאפליקציה עושה וקישור למדיניות הפרטיות. הכלי עצמו נמצא ב-`/app`.
 - **Application privacy policy link:** `https://images2pdf-ih9g.onrender.com/privacy`
 
 ובחלק Authorized domains מוסיפים `images2pdf-ih9g.onrender.com`, ושומרים.
@@ -63,7 +70,7 @@
 שומרים עם "Save and deploy": לפי Render, השמירה מפעילה פריסה עם הערכים החדשים, חוץ מ-"Save only".
 
 **6. (אני) שליחה ללקוח.**
-- שולחים את חלק 1, את הקישור ואת הסיסמה הזמנית.
+- שולחים את חלק 1, את הקישור `https://images2pdf-ih9g.onrender.com/app` ואת הסיסמה הזמנית. גם הכתובת בלי `/app` עובדת: היא פותחת את דף הבית, ומשם "כניסה לאפליקציה".
 - כדאי לשלוח את הסיסמה בערוץ נפרד מהקישור, למשל בשיחה.
 - **חשוב:** לא נכנסים בעצמנו עם הסיסמה הזמנית. היא עובדת פעם אחת, ומי שנכנס איתה ראשון הוא מי שבוחר את הסיסמה.
 
@@ -97,12 +104,14 @@
   - **`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`:** אותו לקוח OAuth מה-Google Cloud שלי. הסוד מוצג בגוגל פעם אחת בלבד, ולכן לוקחים אותו ממקום שבו שמרתי אותו. אם הוא אבד, יוצרים סוד חדש ללקוח ב-Google Cloud, ומעדכנים אותו גם בשירות הישן עד שהוא נמחק.
   - **`ALLOWED_GOOGLE_EMAIL`:** חשבון 1 של הלקוח.
   - **`PRIVACY_CONTACT_EMAIL`:** הכתובת לדף הפרטיות.
+  - **`GOOGLE_SITE_VERIFICATION`:** אפשר להשאיר ריק בשלב הזה, ולהזין אחרי שיוצרים את הנכס ב-Search Console (צעד 4).
 - **מה לא מזינים:** את `TOKEN_ENCRYPTION_KEY` Render מייצר לבד, ואת `RENDER_EXTERNAL_URL` הוא מגדיר לבד.
 - **סיום:** לוחצים Deploy Blueprint, ובסוף רושמים את הכתובת החדשה, `https://<שם>.onrender.com`.
 
 **4. (אני) Google Cloud: הכתובת החדשה.** מוסיפים בלי למחוק את הישנות, כדי שהשירות הישן ימשיך לעבוד עד ההחלפה.
 - **כתובת חזרה:** ב-https://console.developers.google.com/auth/clients פותחים את הלקוח, ומוסיפים ב-Authorized redirect URIs את `https://<הכתובת החדשה>/oauth/callback`. לפי גוגל זה תופס תוך כמה דקות עד כמה שעות.
 - **Branding:** ב-https://console.developers.google.com/auth/branding מעדכנים את Application home page ואת Application privacy policy link לכתובת החדשה (`.../privacy`). ב-Authorized domains מוסיפים את הכתובת החדשה בלי `https://`.
+- **Search Console:** כמו בצעד 3א בחלק 2, עם הכתובת החדשה. נכס חדש מקבל תגית חדשה, וזה הערך ל-`GOOGLE_SITE_VERIFICATION` בשירות החדש.
 
 **5. (אני) הלקוח כבעלים בפרויקט.**
 - ב-https://console.cloud.google.com/iam-admin/iam, בפרויקט של הכלי, לוחצים Grant access, מזינים את חשבון 1 של הלקוח ובוחרים בתפקיד Owner.

@@ -139,11 +139,11 @@ def test_api_requires_login(client, drive):
 
 
 def test_home_is_the_search_screen_when_connected(logged_in, drive):
-    page = logged_in.get(f"{BASE_URL}/").get_data(as_text=True)
+    page = logged_in.get(f"{BASE_URL}/app").get_data(as_text=True)
     assert 'id="search-input"' in page and "picker.js" in page
 
 
 def test_home_is_the_connection_page_when_not_connected(logged_in):
-    page = logged_in.get(f"{BASE_URL}/").get_data(as_text=True)
+    page = logged_in.get(f"{BASE_URL}/app").get_data(as_text=True)
     assert 'id="search-input"' not in page
     assert "חיבור לגוגל" in page

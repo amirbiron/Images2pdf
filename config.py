@@ -45,6 +45,12 @@ DRIVE_ID_MAX_LEN = 200  # מזהי דרייב הם בסביבות 33 תווים;
 _DRIVE_ID_RE = re.compile(r"[A-Za-z0-9_-]+")
 _CLIENT_ID_RE = re.compile(r"[A-Za-z0-9_.-]+\.apps\.googleusercontent\.com")
 _EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+# תגית האימות של Google Search Console, בשיטת "HTML tag":
+# <meta name="google-site-verification" content="..." />. מקור:
+# https://support.google.com/webmasters/answer/9008080 . אפשר להדביק את הערך בלבד, או את כל
+# התגית כמו שהאשף מציג אותה. הערך עצמו מוגבל לתווים של אסימון (בלי רווחים, מרכאות או <>).
+_SITE_VERIFICATION_TAG_RE = re.compile(r'<meta\s+name="google-site-verification"\s+content="([^"]*)"\s*/?>')
+_SITE_VERIFICATION_VALUE_RE = re.compile(r"[A-Za-z0-9_\-+/=.:]{1,200}")
 
 
 def is_valid_drive_id(value: object) -> bool:
@@ -105,6 +111,8 @@ class Settings:
     google_problems: tuple[str, ...]
     # כתובת ליצירת קשר בדף הפרטיות הציבורי. ממשתנה סביבה, כדי שבריפו לא יהיו פרטי הלקוח.
     privacy_contact_email: str | None = None
+    # הערך לתגית האימות של Google Search Console בדף הבית הציבורי.
+    google_site_verification: str | None = None
 
     @property
     def google_configured(self) -> bool:
@@ -183,6 +191,15 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
     data_dir = Path(_read(env, "DATA_DIR") or "/var/data")
 
+    site_verification = _read(env, "GOOGLE_SITE_VERIFICATION")
+    if site_verification is not None:
+        tag = _SITE_VERIFICATION_TAG_RE.fullmatch(site_verification)
+        if tag:
+            site_verification = tag.group(1)
+        if _SITE_VERIFICATION_VALUE_RE.fullmatch(site_verification) is None:
+            logger.warning("GOOGLE_SITE_VERIFICATION is not a valid verification value; the home page has no tag")
+            site_verification = None
+
     privacy_contact = _read(env, "PRIVACY_CONTACT_EMAIL")
     if privacy_contact is not None and (len(privacy_contact) > 254 or _EMAIL_RE.fullmatch(privacy_contact) is None):
         logger.warning("PRIVACY_CONTACT_EMAIL does not look like an email address; the privacy page shows no address")
@@ -203,4 +220,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         data_dir=data_dir,
         google_problems=tuple(problems),
         privacy_contact_email=privacy_contact,
+        google_site_verification=site_verification,
     )

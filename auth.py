@@ -49,8 +49,11 @@ USERNAME = "images2pdf"
 FORM_PASSWORD_MAX_CHARS = 1024  # תקרת קלט בטופס; הסיסמה החדשה עצמה מוגבלת ל-PASSWORD_MAX_CHARS
 
 # endpoints שנגישים בלי כניסה. כל השאר — מאחורי הסיסמה, כולל נתיבי החיבור לגוגל.
-# "privacy" הוא בדיוק /privacy (דף הפרטיות שגוגל דורשת), ולא כל נתיב שמתחיל כך.
-PUBLIC_ENDPOINTS = frozenset({"static", "healthz", "auth.login", "privacy"})
+# "home" הוא דף הבית הציבורי (בדיוק /), ו-"privacy" הוא בדיוק /privacy: שניהם נדרשים
+# לאימות ה-Branding של גוגל. ההחלטה לפי endpoint ולא לפי קידומת של נתיב.
+PUBLIC_ENDPOINTS = frozenset({"static", "healthz", "auth.login", "privacy", "home"})
+# הכלי עצמו (הבורר). עד שלב 4 הוא ישב ב-/, ומאז / הוא דף בית ציבורי.
+APP_PATH = "/app"
 # אחרי כניסה עם הסיסמה החד-פעמית: רק בחירת סיסמה ויציאה.
 SETUP_ENDPOINTS = frozenset({"auth.password_setup", "auth.logout"})
 
@@ -113,18 +116,18 @@ def _clear_cookie(resp) -> None:
 
 
 def safe_next(target: object) -> str:
-    """יעד אחרי כניסה: רק נתיב מקומי. כל דבר אחר → `/`.
+    """יעד אחרי כניסה: רק נתיב מקומי. כל דבר אחר → הכלי (APP_PATH).
 
     בודקים מבנה ולא קידומת: `//evil.com` ו-`/\\evil.com` מתחילים ב-`/` אבל
     הדפדפן מפרש אותם ככתובת חיצונית.
     """
     if not isinstance(target, str) or not target.startswith("/") or len(target) > 2000:
-        return "/"
+        return APP_PATH
     if target.startswith("//") or "\\" in target:
-        return "/"
+        return APP_PATH
     parts = urlsplit(target)
     if parts.scheme or parts.netloc:
-        return "/"
+        return APP_PATH
     return target
 
 
@@ -141,7 +144,7 @@ def gate():
         return _storage_blocked_response()
     if level == "full":
         if request.endpoint == "auth.password_setup":
-            return redirect("/", code=302)
+            return redirect(APP_PATH, code=302)
         return None
     if level == "setup":
         if request.endpoint in SETUP_ENDPOINTS:
@@ -297,7 +300,7 @@ def password_setup():
         return resp
     except PasswordStorageError:
         return _storage_blocked_response()
-    resp = make_response(redirect("/?password=set", code=303))
+    resp = make_response(redirect(f"{APP_PATH}?password=set", code=303))
     _set_cookie(resp, full_cookie_value(stored.session_key))
     return resp
 

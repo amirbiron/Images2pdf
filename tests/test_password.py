@@ -72,7 +72,7 @@ def test_first_login_then_choosing_a_password_through_the_rendered_form(app, cli
     assert by_name["username"]["autocomplete"] == "username" and "hidden" in by_name["username"]
 
     resp = _submit(client, form, new_password=CHOSEN_PASSWORD, confirm_password=CHOSEN_PASSWORD)
-    assert resp.status_code == 303 and resp.headers["Location"] == "/?password=set"
+    assert resp.status_code == 303 and resp.headers["Location"] == "/app?password=set"
     assert client.get(f"{BASE_URL}/settings").status_code == 200  # המכשיר הזה כבר בפנים
 
     other = app.test_client()
@@ -105,7 +105,7 @@ def test_eight_hebrew_characters_are_enough(app, client):
 
 def test_setup_page_is_only_for_the_one_time_state(logged_in):
     resp = logged_in.get(f"{BASE_URL}/password/setup")
-    assert resp.status_code == 302 and resp.headers["Location"] == "/"
+    assert resp.status_code == 302 and resp.headers["Location"] == "/app"
 
 
 def test_logout_works_before_choosing(client):
